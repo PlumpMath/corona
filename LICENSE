@@ -1,3 +1,7 @@
+* This license applies to all parts of of coro that are not externally maintained
+  libraries. The externally maintained libraries used by coro and their licenses
+  are enumerated in LICENSE.deps.
+
 Copyright (c) 2010, Peter Griess <pg@std.in>
 All rights reserved.
 
