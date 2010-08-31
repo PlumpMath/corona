@@ -1,5 +1,6 @@
 .libs
 config.log
+conf*.file
 *.o
 *.lo
 *.la
