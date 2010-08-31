@@ -1,6 +1,3 @@
-LIBEV_VERSION=3.9
-LIBEV_DIR=libev-$(LIBEV_VERSION)
-
 .PHONY: all deps
 
 all: build
@@ -8,10 +5,14 @@ all: build
 build: deps
 
 deps:
-	mkdir deps/build
-	cd deps/$(LIBEV_DIR) && \
+	mkdir -p deps/build
+	cd deps/libev-3.9 && \
 		./configure --prefix=$(shell pwd -P)/deps/build && \
 		make install
+	cd deps/libcoro && \
+		make install INSTALLDIR=$(shell pwd -P)/deps/build
 
 clean:
 	rm -fr deps/build
+	make -C deps/libev-3.9 clean
+	make -C deps/libcoro clean
