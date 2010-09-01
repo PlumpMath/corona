@@ -35,12 +35,7 @@ read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
         perror("read");
     }
 
-    if (nbytes >= 0) {
-        printf("Read %d bytes from socket %d\n", nbytes, rw->rw_sock);
-    }
-
     if (nbytes <= 0) {
-        printf("Closing socket %d\n", rw->rw_sock);
         close(rw->rw_sock);
         ev_io_stop(el, &rw->rw_ev_io);
     }
