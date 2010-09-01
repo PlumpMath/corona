@@ -9,9 +9,9 @@
 
 all: build
 
-build: deps build/bench_ev
+build: deps build/ev
 
-build/bench_ev: src/bench_ev.c
+build/ev: src/ev.c
 	mkdir -p build
 	gcc -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
