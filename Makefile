@@ -7,13 +7,16 @@
 
 .PHONY: all deps
 
-all: build
+all: deps build/ev build/client
 
-build: deps build/ev
-
-build/ev: src/ev.c
-	mkdir -p build
+build/ev: src/ev.c deps build
 	gcc -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+
+build/client: src/client.c deps build
+	gcc -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+
+build:
+	mkdir -p build
 
 deps:
 	mkdir -p deps/build

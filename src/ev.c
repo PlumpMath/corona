@@ -8,53 +8,45 @@
 #include <fcntl.h>
 #include <stdlib.h>
 
-static char buf[1024];
+static char buf[(1 << 20)];
 
-typedef struct accept_watcher_s {
-    struct ev_io aw_ev_io;
-    int aw_sock;
-} accept_watcher_t;
+typedef struct sock_watcher_s {
+    struct ev_io sw_ev_io;
+    int sw_sock;
+} sock_watcher_t;
 
-typedef struct read_watcher_s {
-    struct ev_io rw_ev_io;
-    int rw_sock;
-} read_watcher_t;
-
-static void
-read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
-    read_watcher_t *rw = (read_watcher_t*) ew;
+static void read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
+    sock_watcher_t *sw = (sock_watcher_t*) ew;
     int nbytes = 0;
 
     if (!(revents & EV_READ)) {
         return;
     }
 
-    nbytes = read(rw->rw_sock, buf, sizeof(buf));
+    nbytes = read(sw->sw_sock, buf, sizeof(buf));
 
     if (nbytes < 0) {
         perror("read");
     }
 
     if (nbytes <= 0) {
-        close(rw->rw_sock);
-        ev_io_stop(el, &rw->rw_ev_io);
+        ev_io_stop(el, &sw->sw_ev_io);
+        close(sw->sw_sock);
     }
 }
 
-static void
-accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents)
-{
-    accept_watcher_t *aw = (accept_watcher_t*) ew;
+static void accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
+    sock_watcher_t *sw = (sock_watcher_t*) ew;
     struct sockaddr_in addr;
     socklen_t addrlen = sizeof(addr);
     int sock;
-    read_watcher_t *rw;
+    sock_watcher_t *sw2;
 
     if (!(revents & EV_READ)) {
         return;
     }
 
-    if((sock = accept(aw->aw_sock, (struct sockaddr*) &addr, &addrlen)) < 0) {
+    if((sock = accept(sw->sw_sock, (struct sockaddr*) &addr, &addrlen)) < 0) {
         perror("accept");
         return;
     }
@@ -64,23 +56,21 @@ accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents)
         close(sock);
     }
     
-    rw = (read_watcher_t*) malloc(sizeof(*rw));
+    sw2 = (sock_watcher_t*) malloc(sizeof(*sw2));
 
-    rw->rw_sock = sock;
-    ev_init(&rw->rw_ev_io, read_watcher_cb);
-    ev_io_set(&rw->rw_ev_io, sock, EV_READ);
-    ev_io_start(el, &rw->rw_ev_io);
+    sw2->sw_sock = sock;
+    ev_init(&sw2->sw_ev_io, read_watcher_cb);
+    ev_io_set(&sw2->sw_ev_io, sock, EV_READ);
+    ev_io_start(el, &sw2->sw_ev_io);
 }
 
-int
-main(int argc, char **argv)
-{
+int main(int argc, char **argv) {
     int sock;
     struct sockaddr_in addr;
     struct ev_loop *el;
-    accept_watcher_t aw;
+    sock_watcher_t sw;
 
-    // Set up a socket listening on port 2001
+    // Set up a socket listening on localhost:2001
     
     if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
         perror("socket");
@@ -96,7 +86,7 @@ main(int argc, char **argv)
     addr.sin_len = sizeof(addr);
     addr.sin_family = AF_INET;
     addr.sin_port = htons(2001);
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (bind(sock, (struct sockaddr*) &addr, sizeof(addr))) {
         perror("bind");
         close(sock);
@@ -113,10 +103,10 @@ main(int argc, char **argv)
 
     el = ev_default_loop(EVFLAG_AUTO);
 
-    aw.aw_sock = sock;
-    ev_init(&aw.aw_ev_io, accept_watcher_cb);
-    ev_io_set(&aw.aw_ev_io, sock, EV_READ);
-    ev_io_start(el, &aw.aw_ev_io);
+    sw.sw_sock = sock;
+    ev_init(&sw.sw_ev_io, accept_watcher_cb);
+    ev_io_set(&sw.sw_ev_io, sock, EV_READ);
+    ev_io_start(el, &sw.sw_ev_io);
 
     ev_loop(el, 0);
 
