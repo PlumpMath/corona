@@ -4,11 +4,13 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include "common.h"
 
-static char buf[(1 << 20)];
+static char buf[(1 << 10)];
 
 typedef struct sock_watcher_s {
     struct ev_io sw_ev_io;
@@ -24,6 +26,8 @@ static void read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     }
 
     nbytes = read(sw->sw_sock, buf, sizeof(buf));
+
+    DBG(1, ("read %d bytes from socket %d\n", nbytes, sw->sw_sock));
 
     if (nbytes < 0) {
         perror("read");
@@ -55,6 +59,8 @@ static void accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
         perror("fcntl(O_NONBLOCK)");
         close(sock);
     }
+
+    DBG(0, ("acepted socket %d\n", sock));
     
     sw2 = (sock_watcher_t*) malloc(sizeof(*sw2));
 
@@ -64,14 +70,55 @@ static void accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     ev_io_start(el, &sw2->sw_ev_io);
 }
 
+void usage(FILE *fp, char *name) {
+    fprintf(fp, "usage: %s [options] <ip> <port>\n\n", name);
+    fprintf(fp, "Run the TCP benchmarking server, listening on the given IP\n");
+    fprintf(fp, "address and port.\n\n");
+    fprintf(fp, "Options:\n");
+    fprintf(fp, "  -h                help\n");
+    fprintf(fp, "  -v                be verbose; use multiple times for\n");
+    fprintf(fp, "                    increased verbosity\n");
+}
+
 int main(int argc, char **argv) {
     int sock;
     struct sockaddr_in addr;
     struct ev_loop *el;
     sock_watcher_t sw;
+    int c;
 
-    // Set up a socket listening on localhost:2001
-    
+    optreset = optind = 1;
+    while ((c = getopt(argc, argv, "hv")) != -1) {
+        switch (c) {
+        case 'h':
+            usage(stdout, argv[0]);
+            return 0;
+
+        case 'v':
+            dbg_level++;
+            break;
+
+        case '?':
+            fprintf(stderr, "%s: unknown option %c\n", argv[0], optopt);
+            return 1;
+        }
+    }
+
+    if ((argc - optind) != 2) {
+        usage(stderr, argv[0]);
+        return 1;
+    }
+
+    addr.sin_port = htons(strtoul(argv[optind + 1], NULL, 10));
+    addr.sin_len = sizeof(addr);
+    addr.sin_family = AF_INET;
+    if (inet_aton(argv[optind], &addr.sin_addr) != 1) {
+        fprintf(stderr, "%s: invalid address specified\n", argv[0]);
+        return 1;
+    }
+
+    // Set up a listening socket
+
     if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
         perror("socket");
         return 1;
@@ -83,10 +130,6 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    addr.sin_len = sizeof(addr);
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(2001);
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     if (bind(sock, (struct sockaddr*) &addr, sizeof(addr))) {
         perror("bind");
         close(sock);
@@ -109,7 +152,7 @@ int main(int argc, char **argv) {
     ev_io_start(el, &sw.sw_ev_io);
 
     ev_loop(el, 0);
-
     ev_default_destroy();
+
     return 0;
 }
