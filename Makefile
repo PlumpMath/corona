@@ -10,10 +10,10 @@
 all: deps build/ev build/client
 
 build/ev: src/ev.c deps build
-	gcc -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+	gcc -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
 build/client: src/client.c deps build
-	gcc -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+	gcc -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
 build:
 	mkdir -p build
