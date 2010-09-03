@@ -15,16 +15,23 @@
 #include <signal.h>
 #include "common.h"
 
-char buf[1 << 20];
-struct sockaddr_in addr;
-size_t numConns = 1000;
-size_t dataSize = 1 << 10;
-
 typedef struct write_watcher_s {
     struct ev_io ww_ev_io;
     int ww_sock;
     size_t ww_off;
 } write_watcher_t;
+
+char buf[1 << 20];
+struct sockaddr_in addr;
+size_t numConns = 1000;
+size_t dataSize = 1 << 10;
+
+// stats
+size_t conns_cnt = 0;
+size_t socket_errors_cnt = 0;
+size_t fcntl_errors_cnt = 0;
+size_t connect_errors_cnt = 0;
+size_t write_errors_cnt = 0;
 
 static void sigpipe_cb(int sig) {
     DBG(0, ("ignoring signal %d\n", sig));
@@ -48,7 +55,7 @@ static void write_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     if (nbytes == 0 ||
         (nbytes < 0 && errno != EAGAIN)) {
         if (nbytes < 0) {
-            perror("write");
+            write_errors_cnt++;
         }
 
         DBG(
@@ -68,19 +75,19 @@ static void periodic_watcher_cb(struct ev_loop *el, struct ev_periodic *ep, int 
     write_watcher_t *ww;
 
     if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
-        perror("socket");
+        socket_errors_cnt++;
         return;
     }
 
     if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
-        perror("fcntl(O_NONBLOCK)");
+        fcntl_errors_cnt++;
         close(sock);
         return;
     }
 
     if (connect(sock, (struct sockaddr*) &addr, sizeof(addr)) == -1 &&
         errno != EINPROGRESS) {
-        perror("connect");
+        connect_errors_cnt++;
         return;
     }
 
@@ -92,11 +99,11 @@ static void periodic_watcher_cb(struct ev_loop *el, struct ev_periodic *ep, int 
     ev_io_set(&ww->ww_ev_io, sock, EV_WRITE);
     ev_io_start(el, &ww->ww_ev_io);
 
-    if (--numConns == 0) {
+    if (numConns == ++conns_cnt) {
         ev_periodic_stop(el, ep);
     }
 
-    DBG(0, ("created socket %d; %lu connections remaining\n", sock, numConns));
+    DBG(0, ("created socket %d; %lu connections remaining\n", sock, numConns - conns_cnt));
 }
 
 void usage(FILE *fp, char *name) {
@@ -173,6 +180,11 @@ int main(int argc, char **argv) {
 
     ev_loop(el, 0);
     ev_default_destroy();
+
+    printf("socket(2) errors: %lu\n", socket_errors_cnt);
+    printf("fcntl(2) errors: %lu\n", fcntl_errors_cnt);
+    printf("connect(2) errors: %lu\n", connect_errors_cnt);
+    printf("write(2) errors: %lu\n", write_errors_cnt);
 
     return 0;
 }

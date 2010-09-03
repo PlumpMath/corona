@@ -10,12 +10,28 @@
 #include <stdlib.h>
 #include "common.h"
 
-static char buf[(1 << 10)];
-
 typedef struct sock_watcher_s {
     struct ev_io sw_ev_io;
     int sw_sock;
 } sock_watcher_t;
+
+static char buf[(1 << 10)];
+
+// stats
+size_t conns_cnt = 0;
+size_t read_errors_cnt = 0;
+size_t accept_errors_cnt = 0;
+size_t fcntl_errors_cnt = 0;
+
+static void sigint_cb(int sig) {
+    printf("\n");
+    printf("connections: %lu\n", conns_cnt);
+    printf("read(2) errors: %lu\n", read_errors_cnt);
+    printf("fcntl(2) errors: %lu\n", fcntl_errors_cnt);
+    printf("accept(2) errors: %lu\n", accept_errors_cnt);
+
+    exit(0);
+}
 
 static void read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     sock_watcher_t *sw = (sock_watcher_t*) ew;
@@ -30,7 +46,7 @@ static void read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     DBG(1, ("read %d bytes from socket %d\n", nbytes, sw->sw_sock));
 
     if (nbytes < 0) {
-        perror("read");
+        read_errors_cnt++;
     }
 
     if (nbytes <= 0) {
@@ -51,12 +67,14 @@ static void accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     }
 
     if((sock = accept(sw->sw_sock, (struct sockaddr*) &addr, &addrlen)) < 0) {
-        perror("accept");
+        accept_errors_cnt++;
         return;
     }
+    
+    conns_cnt++;
 
     if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
-        perror("fcntl(O_NONBLOCK)");
+        fcntl_errors_cnt++;
         close(sock);
     }
 
@@ -142,7 +160,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    // Fire up the event loop
+    signal(SIGINT, sigint_cb);
 
     el = ev_default_loop(EVFLAG_AUTO);
 
