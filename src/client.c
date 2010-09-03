@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <ev.h>
 #include <string.h>
+#include <signal.h>
 #include "common.h"
 
 char buf[1 << 20];
@@ -24,6 +25,10 @@ typedef struct write_watcher_s {
     int ww_sock;
     size_t ww_off;
 } write_watcher_t;
+
+static void sigpipe_cb(int sig) {
+    DBG(0, ("ignoring signal %d\n", sig));
+}
 
 static void write_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     write_watcher_t *ww = (write_watcher_t*) ew;
@@ -158,6 +163,8 @@ int main(int argc, char **argv) {
     addr.sin_port = htons(strtoul(argv[optind + 1], NULL, 10));
     addr.sin_len = sizeof(addr);
     addr.sin_family = AF_INET;
+
+    signal(SIGPIPE, sigpipe_cb);
 
     el = ev_default_loop(EVFLAG_AUTO);
 
