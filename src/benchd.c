@@ -18,7 +18,7 @@ typedef struct sock_watcher_s {
     int sw_sock;
 } sock_watcher_t;
 
-static char buf[(1 << 10)];
+static char buf[(1 << 20)];
 
 // stats
 size_t accept_cnt = 0;
@@ -48,11 +48,12 @@ static void read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
         DBG(1, ("read %d bytes from socket %d\n", nbytes, sw->sw_sock));
     }
 
-    if (nbytes < 0) {
-        read_errors_cnt++;
-    }
+    if (nbytes == 0 ||
+        (nbytes < 0 && errno != EAGAIN)) {
+        if (nbytes < 0) {
+            read_errors_cnt++;
+        }
 
-    if (nbytes <= 0) {
         DBG(
             0,
             ("read %d bytes from socket; errno %d\n",
