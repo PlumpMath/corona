@@ -18,17 +18,17 @@ typedef struct sock_watcher_s {
 static char buf[(1 << 10)];
 
 // stats
-size_t conns_cnt = 0;
+size_t accept_cnt = 0;
 size_t read_errors_cnt = 0;
 size_t accept_errors_cnt = 0;
 size_t fcntl_errors_cnt = 0;
 
 static void sigint_cb(int sig) {
     printf("\n");
-    printf("connections: %lu\n", conns_cnt);
+    printf("accept(2) success: %lu\n", accept_cnt);
+    printf("accept(2) errors: %lu\n", accept_errors_cnt);
     printf("read(2) errors: %lu\n", read_errors_cnt);
     printf("fcntl(2) errors: %lu\n", fcntl_errors_cnt);
-    printf("accept(2) errors: %lu\n", accept_errors_cnt);
 
     exit(0);
 }
@@ -71,7 +71,7 @@ static void accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
         return;
     }
     
-    conns_cnt++;
+    accept_cnt++;
 
     if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
         fcntl_errors_cnt++;
