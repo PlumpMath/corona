@@ -139,11 +139,12 @@ void usage(FILE *fp, char *name) {
     fprintf(fp,
 "  -h                help\n");
     fprintf(fp,
-"  -n <conns>        total connections to open\n");
+"  -n <conns>        total connections to open (default: %lu)\n", numConns);
     fprintf(fp,
-"  -r <conns>        connections to open per second\n");
+"  -r <conns>        connections to open per second (default: %lu)\n",connRate);
     fprintf(fp,
-"  -s <bytes>        bytes to send down each connection\n");
+"  -s <bytes>        bytes to send down each connection (default: %lu)\n",
+dataSize);
     fprintf(fp,
 "  -v                be verbose; use multiple times for increased verbosity\n");
 }
