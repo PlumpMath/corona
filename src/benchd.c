@@ -8,6 +8,7 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 #include "common.h"
@@ -43,15 +44,21 @@ static void read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
         return;
     }
 
-    nbytes = read(sw->sw_sock, buf, sizeof(buf));
-
-    DBG(1, ("read %d bytes from socket %d\n", nbytes, sw->sw_sock));
+    while ((nbytes = read(sw->sw_sock, buf, sizeof(buf))) > 0) {
+        DBG(1, ("read %d bytes from socket %d\n", nbytes, sw->sw_sock));
+    }
 
     if (nbytes < 0) {
         read_errors_cnt++;
     }
 
     if (nbytes <= 0) {
+        DBG(
+            0,
+            ("read %d bytes from socket; errno %d\n",
+                nbytes, (nbytes < 0) ? errno : 0)
+        );
+
         ev_io_stop(el, &sw->sw_ev_io);
         close(sw->sw_sock);
     }
