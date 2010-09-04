@@ -29,9 +29,9 @@ struct sockaddr_in addr;
 size_t connRate = 100;
 size_t numConns = 1000;
 size_t dataSize = 1 << 10;
+size_t conns_cnt = 0;
 
 // stats
-size_t conns_cnt = 0;
 errno_cnt_t socket_errors_cnt;
 errno_cnt_t fcntl_errors_cnt;
 errno_cnt_t connect_errors_cnt;
@@ -49,16 +49,16 @@ static void write_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
         return;
     }
 
-    while ((nbytes = write(ww->ww_sock, buf, dataSize - ww->ww_off)) > 0) {
+    do {
+        nbytes = write(ww->ww_sock, buf, MIN(sizeof(buf), dataSize - ww->ww_off));
+        errno_cnt_incr(&write_errors_cnt, nbytes);
         DBG(1, ("wrote %d bytes to socket %d\n", nbytes, ww->ww_sock));
-        ww->ww_off += nbytes;
-    }
+        if (nbytes > 0) {
+            ww->ww_off += nbytes;
+        }
+    } while (nbytes > 0);
 
     assert((nbytes == 0) == (ww->ww_off == dataSize));
-
-    if (nbytes < 0) {
-        errno_cnt_incr(&write_errors_cnt);
-    }
 
     if (nbytes == 0 ||
         (nbytes < 0 && errno != EAGAIN)) {
@@ -76,23 +76,26 @@ static void write_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
 
 static void spawn_connection(struct ev_loop *el) {
     int sock;
+    int err;
     write_watcher_t *ww;
 
-    if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
-        errno_cnt_incr(&socket_errors_cnt);
+    sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */);
+    errno_cnt_incr(&socket_errors_cnt, sock);
+    if (sock < 0) {
         return;
     }
 
-    if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
-        errno_cnt_incr(&fcntl_errors_cnt);
+    err = fcntl(sock, F_SETFL, O_NONBLOCK);
+    errno_cnt_incr(&fcntl_errors_cnt, err);
+    if (err < 0) {
         close(sock);
         return;
     }
 
-    if (connect(sock, (struct sockaddr*) &addr, sizeof(addr)) == -1 &&
-        errno != EINPROGRESS) {
+    err = connect(sock, (struct sockaddr*) &addr, sizeof(addr));
+    errno_cnt_incr(&connect_errors_cnt, err);
+    if (err < 0 && errno != EINPROGRESS) {
         close(sock);
-        errno_cnt_incr(&connect_errors_cnt);
         return;
     }
 
@@ -232,10 +235,10 @@ int main(int argc, char **argv) {
     ev_loop(el, 0);
     ev_default_destroy();
 
-    errno_cnt_dump(stdout, "socket(2)", &socket_errors_cnt);
-    errno_cnt_dump(stdout, "fcntl(2)", &fcntl_errors_cnt);
-    errno_cnt_dump(stdout, "connect(2)", &connect_errors_cnt);
-    errno_cnt_dump(stdout, "write(2)", &write_errors_cnt);
+    errno_cnt_dump(stdout, "socket", &socket_errors_cnt);
+    errno_cnt_dump(stdout, "fcntl", &fcntl_errors_cnt);
+    errno_cnt_dump(stdout, "connect", &connect_errors_cnt);
+    errno_cnt_dump(stdout, "write", &write_errors_cnt);
 
     return 0;
 }

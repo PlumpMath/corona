@@ -21,10 +21,10 @@ size_t dbg_level = 0;
 
 typedef size_t errno_cnt_t[ELAST + 1];
 
-#define errno_cnt_incr(ecp) \
+#define errno_cnt_incr(ecp, ret) \
     do { \
         assert(errno <= ELAST); \
-        (*ecp)[errno]++; \
+        (*ecp)[((ret) >= 0) ? 0 : errno]++; \
     } while (0)
 
 #define errno_cnt_init(ecp) \
