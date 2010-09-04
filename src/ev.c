@@ -5,9 +5,11 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <netdb.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
+#include <string.h>
 #include "common.h"
 
 typedef struct sock_watcher_s {
@@ -89,7 +91,7 @@ static void accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
 }
 
 void usage(FILE *fp, char *name) {
-    fprintf(fp, "usage: %s [options] <ip> <port>\n\n", name);
+    fprintf(fp, "usage: %s [options] <hostname> <port>\n\n", name);
     fprintf(fp, "Run the TCP benchmarking server, listening on the given IP\n");
     fprintf(fp, "address and port.\n\n");
     fprintf(fp, "Options:\n");
@@ -104,6 +106,7 @@ int main(int argc, char **argv) {
     struct ev_loop *el;
     sock_watcher_t sw;
     int c;
+    struct hostent *hent;
 
     optreset = optind = 1;
     while ((c = getopt(argc, argv, "hv")) != -1) {
@@ -127,13 +130,15 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    if (!(hent = gethostbyname(argv[optind]))) {
+        fprintf(stderr, "%s: could not resolve host name\n", argv[0]);
+        return 1;
+    }
+
+    memcpy(&addr.sin_addr, hent->h_addr, sizeof(addr.sin_addr));
     addr.sin_port = htons(strtoul(argv[optind + 1], NULL, 10));
     addr.sin_len = sizeof(addr);
     addr.sin_family = AF_INET;
-    if (inet_aton(argv[optind], &addr.sin_addr) != 1) {
-        fprintf(stderr, "%s: invalid address specified\n", argv[0]);
-        return 1;
-    }
 
     // Set up a listening socket
 
