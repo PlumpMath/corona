@@ -7,12 +7,12 @@
 
 .PHONY: all deps
 
-all: deps build/ev build/client
+all: deps build/benchd build/bench
 
-build/ev: src/ev.c deps build
+build/benchd: src/benchd.c deps build
 	gcc -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
-build/client: src/client.c deps build
+build/bench: src/bench.c deps build
 	gcc -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
 build:
@@ -34,5 +34,6 @@ tags:
 
 clean:
 	rm -fr deps/build
+	rm -fr build
 	make -C deps/libev-3.9 distclean clean
 	make -C deps/libcoro clean

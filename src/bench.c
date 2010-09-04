@@ -130,15 +130,22 @@ static void periodic_watcher_cb(struct ev_loop *el, struct ev_periodic *ep, int 
 }
 
 void usage(FILE *fp, char *name) {
-    fprintf(fp, "usage: %s [options] <host> <port>\n\n", name);
-    fprintf(fp, "Run the TCP benchmarking client.\n\n");
-    fprintf(fp, "Options:\n");
-    fprintf(fp, "  -h                help\n");
-    fprintf(fp, "  -n <conns>        total connections to open\n");
-    fprintf(fp, "  -r <conns>        connections to open per second\n");
-    fprintf(fp, "  -s <bytes>        bytes to send down each connection\n");
-    fprintf(fp, "  -v                be verbose; use multiple times for\n");
-    fprintf(fp, "                    increased verbosity\n");
+    fprintf(fp,
+"usage: %s [options] <host> <port>\n\n", name);
+    fprintf(fp,
+"Run the TCP benchmarking client.\n\n");
+    fprintf(fp,
+"Options:\n");
+    fprintf(fp,
+"  -h                help\n");
+    fprintf(fp,
+"  -n <conns>        total connections to open\n");
+    fprintf(fp,
+"  -r <conns>        connections to open per second\n");
+    fprintf(fp,
+"  -s <bytes>        bytes to send down each connection\n");
+    fprintf(fp,
+"  -v                be verbose; use multiple times for increased verbosity\n");
 }
 
 int main(int argc, char **argv) {

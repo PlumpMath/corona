@@ -91,13 +91,16 @@ static void accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
 }
 
 void usage(FILE *fp, char *name) {
-    fprintf(fp, "usage: %s [options] <hostname> <port>\n\n", name);
-    fprintf(fp, "Run the TCP benchmarking server, listening on the given IP\n");
-    fprintf(fp, "address and port.\n\n");
-    fprintf(fp, "Options:\n");
-    fprintf(fp, "  -h                help\n");
-    fprintf(fp, "  -v                be verbose; use multiple times for\n");
-    fprintf(fp, "                    increased verbosity\n");
+    fprintf(fp,
+"usage: %s [options] <hostname> <port>\n\n", name);
+    fprintf(fp,
+"Run the TCP benchmarking server, listening on the given hostname and port.\n");
+    fprintf(fp,
+"\nOptions:\n");
+    fprintf(fp,
+"  -h                help\n");
+    fprintf(fp,
+"  -v                be verbose; use multiple times for increased verbosity\n");
 }
 
 int main(int argc, char **argv) {
