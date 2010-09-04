@@ -22,16 +22,16 @@ static char buf[(1 << 20)];
 
 // stats
 size_t accept_cnt = 0;
-size_t read_errors_cnt = 0;
-size_t accept_errors_cnt = 0;
-size_t fcntl_errors_cnt = 0;
+errno_cnt_t read_errors_cnt;
+errno_cnt_t accept_errors_cnt;
+errno_cnt_t fcntl_errors_cnt;
 
 static void sigint_cb(int sig) {
     printf("\n");
     printf("accept(2) success: %lu\n", accept_cnt);
-    printf("accept(2) errors: %lu\n", accept_errors_cnt);
-    printf("read(2) errors: %lu\n", read_errors_cnt);
-    printf("fcntl(2) errors: %lu\n", fcntl_errors_cnt);
+    errno_cnt_dump(stdout, "accept(2)", &accept_errors_cnt);
+    errno_cnt_dump(stdout, "read(2)", &read_errors_cnt);
+    errno_cnt_dump(stdout, "fcntl(2)", &fcntl_errors_cnt);
 
     exit(0);
 }
@@ -48,12 +48,12 @@ static void read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
         DBG(1, ("read %d bytes from socket %d\n", nbytes, sw->sw_sock));
     }
 
+    if (nbytes < 0) {
+        errno_cnt_incr(&read_errors_cnt);
+    }
+
     if (nbytes == 0 ||
         (nbytes < 0 && errno != EAGAIN)) {
-        if (nbytes < 0) {
-            read_errors_cnt++;
-        }
-
         DBG(
             0,
             ("read %d bytes from socket; errno %d\n",
@@ -77,14 +77,14 @@ static void accept_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     }
 
     if((sock = accept(sw->sw_sock, (struct sockaddr*) &addr, &addrlen)) < 0) {
-        accept_errors_cnt++;
+        errno_cnt_incr(&accept_errors_cnt);
         return;
     }
     
     accept_cnt++;
 
     if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
-        fcntl_errors_cnt++;
+        errno_cnt_incr(&fcntl_errors_cnt);
         close(sock);
     }
 

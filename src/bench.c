@@ -32,10 +32,10 @@ size_t dataSize = 1 << 10;
 
 // stats
 size_t conns_cnt = 0;
-size_t socket_errors_cnt = 0;
-size_t fcntl_errors_cnt = 0;
-size_t connect_errors_cnt = 0;
-size_t write_errors_cnt = 0;
+errno_cnt_t socket_errors_cnt;
+errno_cnt_t fcntl_errors_cnt;
+errno_cnt_t connect_errors_cnt;
+errno_cnt_t write_errors_cnt;
 
 static void sigpipe_cb(int sig) {
     DBG(0, ("ignoring signal %d\n", sig));
@@ -56,12 +56,12 @@ static void write_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
 
     assert((nbytes == 0) == (ww->ww_off == dataSize));
 
+    if (nbytes < 0) {
+        errno_cnt_incr(&write_errors_cnt);
+    }
+
     if (nbytes == 0 ||
         (nbytes < 0 && errno != EAGAIN)) {
-        if (nbytes < 0) {
-            write_errors_cnt++;
-        }
-
         DBG(
             0,
             ("closing socket %d with errno %d\n",
@@ -79,12 +79,12 @@ static void spawn_connection(struct ev_loop *el) {
     write_watcher_t *ww;
 
     if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
-        socket_errors_cnt++;
+        errno_cnt_incr(&socket_errors_cnt);
         return;
     }
 
     if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
-        fcntl_errors_cnt++;
+        errno_cnt_incr(&fcntl_errors_cnt);
         close(sock);
         return;
     }
@@ -92,7 +92,7 @@ static void spawn_connection(struct ev_loop *el) {
     if (connect(sock, (struct sockaddr*) &addr, sizeof(addr)) == -1 &&
         errno != EINPROGRESS) {
         close(sock);
-        connect_errors_cnt++;
+        errno_cnt_incr(&connect_errors_cnt);
         return;
     }
 
@@ -160,6 +160,12 @@ int main(int argc, char **argv) {
     struct ev_periodic ep;
     int c;
 
+    // Initialize stats
+    errno_cnt_init(&socket_errors_cnt);
+    errno_cnt_init(&fcntl_errors_cnt);
+    errno_cnt_init(&connect_errors_cnt);
+    errno_cnt_init(&write_errors_cnt);
+
     // Options and defaults
     struct hostent *hent;
     float period = 1.0f / connRate;
@@ -226,10 +232,10 @@ int main(int argc, char **argv) {
     ev_loop(el, 0);
     ev_default_destroy();
 
-    printf("socket(2) errors: %lu\n", socket_errors_cnt);
-    printf("fcntl(2) errors: %lu\n", fcntl_errors_cnt);
-    printf("connect(2) errors: %lu\n", connect_errors_cnt);
-    printf("write(2) errors: %lu\n", write_errors_cnt);
+    errno_cnt_dump(stdout, "socket(2)", &socket_errors_cnt);
+    errno_cnt_dump(stdout, "fcntl(2)", &fcntl_errors_cnt);
+    errno_cnt_dump(stdout, "connect(2)", &connect_errors_cnt);
+    errno_cnt_dump(stdout, "write(2)", &write_errors_cnt);
 
     return 0;
 }
