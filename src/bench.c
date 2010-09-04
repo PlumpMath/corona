@@ -74,12 +74,46 @@ static void write_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     }
 }
 
+static void spawn_connection(struct ev_loop *el) {
+    int sock;
+    write_watcher_t *ww;
+
+    if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
+        socket_errors_cnt++;
+        return;
+    }
+
+    if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
+        fcntl_errors_cnt++;
+        close(sock);
+        return;
+    }
+
+    if (connect(sock, (struct sockaddr*) &addr, sizeof(addr)) == -1 &&
+        errno != EINPROGRESS) {
+        close(sock);
+        connect_errors_cnt++;
+        return;
+    }
+
+    ww = (write_watcher_t*) malloc(sizeof(*ww));
+
+    ww->ww_sock = sock;
+    ww->ww_off = 0;
+    ev_init(&ww->ww_ev_io, write_watcher_cb);
+    ev_io_set(&ww->ww_ev_io, sock, EV_WRITE);
+    ev_io_start(el, &ww->ww_ev_io);
+
+    DBG(
+        0,
+        ("created socket %d; %lu connections remaining\n",
+            sock, numConns - conns_cnt)
+    );
+}
+
 static void periodic_watcher_cb(struct ev_loop *el, struct ev_periodic *ep, int revents) {
     static float conns_per_tick = 0.0f;
     static float conns_remainder = 0.0f;
-
-    int sock;
-    write_watcher_t *ww;
 
     if (conns_per_tick == 0) {
         conns_per_tick = (connRate <= MAX_TICK_FREQUENCY) ?
@@ -91,37 +125,7 @@ static void periodic_watcher_cb(struct ev_loop *el, struct ev_periodic *ep, int 
     for (conns_remainder += conns_per_tick;
          conns_remainder >= 1.0f && numConns > conns_cnt;
          conns_remainder--, conns_cnt++) {
-        if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
-            socket_errors_cnt++;
-            continue;
-        }
-
-        if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
-            fcntl_errors_cnt++;
-            close(sock);
-            continue;
-        }
-
-        if (connect(sock, (struct sockaddr*) &addr, sizeof(addr)) == -1 &&
-            errno != EINPROGRESS) {
-            close(sock);
-            connect_errors_cnt++;
-            continue;
-        }
-
-        ww = (write_watcher_t*) malloc(sizeof(*ww));
-
-        ww->ww_sock = sock;
-        ww->ww_off = 0;
-        ev_init(&ww->ww_ev_io, write_watcher_cb);
-        ev_io_set(&ww->ww_ev_io, sock, EV_WRITE);
-        ev_io_start(el, &ww->ww_ev_io);
-
-        DBG(
-            0,
-            ("created socket %d; %lu connections remaining\n",
-                sock, numConns - conns_cnt)
-        );
+        spawn_connection(el);
     }
 
     if (numConns <= conns_cnt) {
@@ -141,7 +145,9 @@ void usage(FILE *fp, char *name) {
     fprintf(fp,
 "  -n <conns>        total connections to open (default: %lu)\n", numConns);
     fprintf(fp,
-"  -r <conns>        connections to open per second (default: %lu)\n",connRate);
+"  -r <conns>        connections to open per second; a value of 0 will cause\n"
+"                    all connections to be opened before any data is sent\n"
+"                    (default: %lu)\n", connRate);
     fprintf(fp,
 "  -s <bytes>        bytes to send down each connection (default: %lu)\n",
 dataSize);
@@ -166,8 +172,9 @@ int main(int argc, char **argv) {
             return 0;
 
         case 'r':
-            connRate = strtoul(optarg, NULL, 10);
-            period = 1.0f / MIN(connRate, MAX_TICK_FREQUENCY);
+            if ((connRate = strtoul(optarg, NULL, 10)) > 0) {
+                period = 1.0f / MIN(connRate, MAX_TICK_FREQUENCY);
+            }
             break;
 
         case 's':
@@ -207,8 +214,14 @@ int main(int argc, char **argv) {
 
     el = ev_default_loop(EVFLAG_AUTO);
 
-    ev_periodic_init(&ep, periodic_watcher_cb, 0, period, NULL);
-    ev_periodic_start(el, &ep);
+    if (connRate > 0) {
+        ev_periodic_init(&ep, periodic_watcher_cb, 0, period, NULL);
+        ev_periodic_start(el, &ep);
+    } else {
+        while (numConns-- > 0) {
+            spawn_connection(el);
+        }
+    }
 
     ev_loop(el, 0);
     ev_default_destroy();
