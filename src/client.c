@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <errno.h>
+#include <sys/param.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -15,6 +16,8 @@
 #include <signal.h>
 #include "common.h"
 
+#define MAX_TICK_FREQUENCY                          1000
+
 typedef struct write_watcher_s {
     struct ev_io ww_ev_io;
     int ww_sock;
@@ -23,6 +26,7 @@ typedef struct write_watcher_s {
 
 char buf[1 << 20];
 struct sockaddr_in addr;
+size_t connRate = 100;
 size_t numConns = 1000;
 size_t dataSize = 1 << 10;
 
@@ -71,39 +75,58 @@ static void write_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
 }
 
 static void periodic_watcher_cb(struct ev_loop *el, struct ev_periodic *ep, int revents) {
+    static float conns_per_tick = 0.0f;
+    static float conns_remainder = 0.0f;
+
     int sock;
     write_watcher_t *ww;
 
-    if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
-        socket_errors_cnt++;
-        return;
+    if (conns_per_tick == 0) {
+        conns_per_tick = (connRate <= MAX_TICK_FREQUENCY) ?
+            1.0f :
+            (connRate / MAX_TICK_FREQUENCY);
+        DBG(0, ("making %f connections per tick\n", conns_per_tick));
     }
 
-    if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
-        fcntl_errors_cnt++;
-        close(sock);
-        return;
+    for (conns_remainder += conns_per_tick;
+         conns_remainder >= 1.0f && numConns > conns_cnt;
+         conns_remainder--, conns_cnt++) {
+        if ((sock = socket(PF_INET, SOCK_STREAM, 6 /* TCP */)) < 0) {
+            socket_errors_cnt++;
+            continue;
+        }
+
+        if (fcntl(sock, F_SETFL, O_NONBLOCK)) {
+            fcntl_errors_cnt++;
+            close(sock);
+            continue;
+        }
+
+        if (connect(sock, (struct sockaddr*) &addr, sizeof(addr)) == -1 &&
+            errno != EINPROGRESS) {
+            close(sock);
+            connect_errors_cnt++;
+            continue;
+        }
+
+        ww = (write_watcher_t*) malloc(sizeof(*ww));
+
+        ww->ww_sock = sock;
+        ww->ww_off = 0;
+        ev_init(&ww->ww_ev_io, write_watcher_cb);
+        ev_io_set(&ww->ww_ev_io, sock, EV_WRITE);
+        ev_io_start(el, &ww->ww_ev_io);
+
+        DBG(
+            0,
+            ("created socket %d; %lu connections remaining\n",
+                sock, numConns - conns_cnt)
+        );
     }
 
-    if (connect(sock, (struct sockaddr*) &addr, sizeof(addr)) == -1 &&
-        errno != EINPROGRESS) {
-        connect_errors_cnt++;
-        return;
-    }
-
-    ww = (write_watcher_t*) malloc(sizeof(*ww));
-
-    ww->ww_sock = sock;
-    ww->ww_off = 0;
-    ev_init(&ww->ww_ev_io, write_watcher_cb);
-    ev_io_set(&ww->ww_ev_io, sock, EV_WRITE);
-    ev_io_start(el, &ww->ww_ev_io);
-
-    if (numConns == ++conns_cnt) {
+    if (numConns <= conns_cnt) {
         ev_periodic_stop(el, ep);
     }
-
-    DBG(0, ("created socket %d; %lu connections remaining\n", sock, numConns - conns_cnt));
 }
 
 void usage(FILE *fp, char *name) {
@@ -124,8 +147,8 @@ int main(int argc, char **argv) {
     int c;
 
     // Options and defaults
-    int connRate = 100;
     struct hostent *hent;
+    float period = 1.0f / connRate;
 
     optreset = optind = 1;
     while ((c = getopt(argc, argv, "r:s:n:hv")) != -1) {
@@ -136,6 +159,7 @@ int main(int argc, char **argv) {
 
         case 'r':
             connRate = strtoul(optarg, NULL, 10);
+            period = 1.0f / MIN(connRate, MAX_TICK_FREQUENCY);
             break;
 
         case 's':
@@ -175,7 +199,7 @@ int main(int argc, char **argv) {
 
     el = ev_default_loop(EVFLAG_AUTO);
 
-    ev_periodic_init(&ep, periodic_watcher_cb, 0, 1.0f / connRate, NULL);
+    ev_periodic_init(&ep, periodic_watcher_cb, 0, period, NULL);
     ev_periodic_start(el, &ep);
 
     ev_loop(el, 0);
