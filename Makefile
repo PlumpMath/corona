@@ -5,10 +5,10 @@ V8_VERS = 2.4.1
 
 all: deps build/benchd build/bench
 
-build/benchd: src/benchd.c deps build
+build/benchd: bench/benchd.c deps build
 	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
-build/bench: src/bench.c deps build
+build/bench: bench/bench.c deps build
 	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
 build:
