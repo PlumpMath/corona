@@ -32,6 +32,7 @@ size_t dataSize = 1 << 10;
 size_t conns_cnt = 0;
 
 // stats
+size_t watcher_run_cnt = 0;
 errno_cnt_t socket_errors_cnt;
 errno_cnt_t fcntl_errors_cnt;
 errno_cnt_t connect_errors_cnt;
@@ -45,10 +46,12 @@ static void write_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     write_watcher_t *ww = (write_watcher_t*) ew;
     int nbytes;
 
+    watcher_run_cnt++;
+
     if (!(revents & EV_WRITE)) {
         return;
     }
-
+    
     do {
         nbytes = write(ww->ww_sock, buf, MIN(sizeof(buf), dataSize - ww->ww_off));
         errno_cnt_incr(&write_errors_cnt, nbytes);
@@ -236,6 +239,7 @@ int main(int argc, char **argv) {
     ev_loop(el, 0);
     ev_default_destroy();
 
+    printf("watcher invocations: %lu\n", watcher_run_cnt);
     errno_cnt_dump(stdout, "socket", &socket_errors_cnt);
     errno_cnt_dump(stdout, "fcntl", &fcntl_errors_cnt);
     errno_cnt_dump(stdout, "connect", &connect_errors_cnt);

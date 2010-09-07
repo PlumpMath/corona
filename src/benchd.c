@@ -21,12 +21,15 @@ typedef struct sock_watcher_s {
 static char buf[(1 << 20)];
 
 // stats
+size_t watcher_run_cnt = 0;
 errno_cnt_t read_errors_cnt;
 errno_cnt_t accept_errors_cnt;
 errno_cnt_t fcntl_errors_cnt;
 
 static void sigint_cb(int sig) {
     printf("\n");
+
+    printf("watcher invocations: %lu\n", watcher_run_cnt);
     errno_cnt_dump(stdout, "accept", &accept_errors_cnt);
     errno_cnt_dump(stdout, "read", &read_errors_cnt);
     errno_cnt_dump(stdout, "fcntl", &fcntl_errors_cnt);
@@ -41,6 +44,8 @@ static void read_watcher_cb(struct ev_loop *el, ev_io *ew, int revents) {
     if (!(revents & EV_READ)) {
         return;
     }
+
+    watcher_run_cnt++;
 
     do {
         nbytes = read(sw->sw_sock, buf, sizeof(buf));
