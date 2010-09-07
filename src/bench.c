@@ -214,6 +214,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    bzero(&addr, sizeof(addr));
     memcpy(&addr.sin_addr, hent->h_addr, sizeof(addr.sin_addr));
     addr.sin_port = htons(strtoul(argv[optind + 1], NULL, 10));
     addr.sin_len = sizeof(addr);
