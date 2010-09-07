@@ -1,5 +1,5 @@
-* This license applies to all parts of of coro that are not externally maintained
-  libraries. The externally maintained libraries used by coro and their licenses
+* This license applies to all parts of of Corona that are not externally maintained
+  libraries. The externally maintained libraries used by Corona and their licenses
   are enumerated in LICENSE.deps.
 
 Copyright (c) 2010, Peter Griess <pg@std.in>
@@ -15,7 +15,7 @@ modification, are permitted provided that the following conditions are met:
       this list of conditions and the following disclaimer in the documentation
       and/or other materials provided with the distribution.
 
-    * Neither the name coro nor the names of its contributors
+    * Neither the name Corona nor the names of its contributors
       may be used to endorse or promote products derived from this software
       without specific prior written permission.
 
