@@ -1,6 +1,12 @@
+Makefile
 .libs
 config.log
+config.h
+config.status
+libtool
+stamp-h1
 conf*.file
 *.o
 *.lo
 *.la
+
