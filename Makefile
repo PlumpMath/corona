@@ -10,7 +10,7 @@
 all: deps build/benchd build/bench
 
 build/benchd: src/benchd.c deps build
-	gcc -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
 build/bench: src/bench.c deps build
 	gcc -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<

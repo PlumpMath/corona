@@ -5,7 +5,7 @@
 all: libcoro.a
 
 libcoro.a: coro.c coro.h
-	gcc -D_XOPEN_SOURCE -DCORO_UCONTEXT -c -o coro.o coro.c
+	gcc -D_XOPEN_SOURCE -DCORO_SJLJ -g -c -o coro.o coro.c
 	libtool -static -o libcoro.a coro.o
 
 install: libcoro.a
