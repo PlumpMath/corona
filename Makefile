@@ -1,9 +1,3 @@
-# XXX: Unfortunately, we're not able to statically link (gcc -static) when
-# 	   building bench_ev. If we do, linking fails with
-#
-# 	   	ld: library not found for -lcrt0.o
-#
-# XXX: Use automake/autoconf for libcoro, and/or include its source inline.
 
 .PHONY: all deps
 
@@ -13,7 +7,7 @@ build/benchd: src/benchd.c deps build
 	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
 build/bench: src/bench.c deps build
-	gcc -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
 build:
 	mkdir -p build
@@ -21,7 +15,7 @@ build:
 deps:
 	mkdir -p deps/build
 	cd deps/libev-3.9 && \
-		(test -f config.status || ./configure --prefix=$(shell pwd -P)/deps/build) && \
+		(test -f config.status || ./configure --disable-shared --prefix=$(shell pwd -P)/deps/build) && \
 		make install
 	cd deps/libcoro && \
 		make install INSTALLDIR=$(shell pwd -P)/deps/build
