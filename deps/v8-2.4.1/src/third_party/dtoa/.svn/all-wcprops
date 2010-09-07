@@ -1,0 +1,17 @@
+K 25
+svn:wc:ra_dav:version-url
+V 50
+/svn/!svn/ver/5413/tags/2.4.1/src/third_party/dtoa
+END
+COPYING
+K 25
+svn:wc:ra_dav:version-url
+V 58
+/svn/!svn/ver/5413/tags/2.4.1/src/third_party/dtoa/COPYING
+END
+dtoa.c
+K 25
+svn:wc:ra_dav:version-url
+V 57
+/svn/!svn/ver/5413/tags/2.4.1/src/third_party/dtoa/dtoa.c
+END
