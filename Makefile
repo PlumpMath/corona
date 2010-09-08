@@ -1,21 +1,34 @@
 LIBEV_VERS = 3.9
 V8_VERS = 2.4.1
 
+CFLAGS = -g -Wall -Werror 
+CFLAGS += -DCORO_SJLJ
+CFLAGS += -Ideps/build/include
+CXXFLAGS = $(CFLAGS)
+LDFLAGS = -Ldeps/build/lib
+LDFLAGS += -lcoro -lev -lv8_g
+
 .PHONY: all deps
 
 all: deps build/benchd build/bench build/corona
 
-build/benchd: src/benchd.c deps build
-	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+build/benchd: build/obj/benchd.o
+	$(CC) $(LDFLAGS) -o $@ $^
 
-build/bench: src/bench.c deps build
-	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+build/bench: build/obj/bench.o
+	$(CC) $(LDFLAGS) -o $@ $^
 
-build/corona: src/*.cc deps build
-	g++ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -lv8_g -o $@ $<
+build/corona: build/obj/corona.o
+	$(CXX) $(LDFLAGS) -o $@ $^
 
-build:
-	mkdir -p build
+build/obj/%.o: src/%.c build/obj deps
+	$(CC) $(CFLAGS) -o $@ -c $<
+
+build/obj/%.o: src/%.cc build/obj deps
+	$(CXX) $(CXXFLAGS) -o $@ -c $<
+
+build/obj:
+	mkdir -p build/obj
 
 deps:
 	mkdir -p deps/build
