@@ -44,7 +44,7 @@ deps:
 
 tags:
 	rm -f tags
-	find . -name '*.[ch]' | ctags -L -
+	find . -name '*.[ch]' -or -name '*.cc' | ctags -L -
 	find /usr/include | ctags -L - -a
 	find /opt/local/include | ctags -L - -a
 
