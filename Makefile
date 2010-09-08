@@ -3,13 +3,16 @@ V8_VERS = 2.4.1
 
 .PHONY: all deps
 
-all: deps build/benchd build/bench
+all: deps build/benchd build/bench build/corona
 
 build/benchd: bench/benchd.c deps build
 	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
 
 build/bench: bench/bench.c deps build
 	gcc -DCORO_SJLJ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -o $@ $<
+
+build/corona: src/*.cc
+	g++ -g -Wall -Werror -Ideps/build/include -Ldeps/build/lib -lcoro -lev -lv8_g -o $@ $<
 
 build:
 	mkdir -p build
