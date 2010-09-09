@@ -37,6 +37,25 @@ LogCB(const v8::Arguments &args) {
     return scope.Close(v8::Undefined());
 }
 
+// Log an exception to stderr
+static void
+LogException(FILE *fp, v8::TryCatch &try_catch) {
+    v8::HandleScope scope;
+
+    assert(try_catch.HasCaught());
+
+    v8::Local<v8::Message> msg = try_catch.Message();
+    v8::String::Utf8Value msgStr(msg->Get());
+    v8::String::Utf8Value resourceStr(msg->GetScriptResourceName());
+
+    fprintf(
+        fp,
+        "%s: %s at %s:%d,%d\n",
+            g_execname, *msgStr, *resourceStr, msg->GetLineNumber(),
+            msg->GetStartColumn()
+    );
+}
+
 // Execute the script held in a file of the given name
 //
 // The script is run in the current context and its result value is returned.
@@ -91,17 +110,8 @@ ExecScript(const char *fname) {
     );
     if (script.IsEmpty()) {
         assert(try_catch.HasCaught());
-
-        v8::Local<v8::Message> msg = try_catch.Message();
-        v8::String::Utf8Value msgStr(msg->Get());
-
-        fprintf(
-            stderr,
-            "ExecScript: %s at line %d, column %d\n",
-                *msgStr, msg->GetLineNumber(), msg->GetStartColumn()
-        );
-
         free(buf);
+        LogException(stderr, try_catch);
 
         return scope.Close(scriptResult);
     }
