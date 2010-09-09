@@ -59,9 +59,9 @@ LogException(FILE *fp, v8::TryCatch &try_catch) {
 // Execute the script held in a file of the given name
 //
 // The script is run in the current context and its result value is returned.
-// On error, an empty handle is returned.
+// On error, the process is exited.
 static v8::Handle<v8::Value>
-ExecScript(const char *fname) {
+ExecMainScript(const char *fname) {
     v8::HandleScope scope;
     v8::Handle<v8::Value> scriptResult;
     v8::TryCatch try_catch;
@@ -76,9 +76,8 @@ ExecScript(const char *fname) {
     // Open our script file
     fd = open(fname, O_RDONLY);
     if (fd < 0) {
-        fprintf(stderr, "ExecScript: open failed: %s\n", strerror(errno));
-
-        return scope.Close(scriptResult);
+        fprintf(stderr, "ExecMainScript: open failed: %s\n", strerror(errno));
+        exit(1);
     }
 
     // Read our script file, resizing the buffer as necessary
@@ -99,28 +98,30 @@ ExecScript(const char *fname) {
 
     if (nread < 0) {
         free(buf);
-        fprintf(stderr, "ExecScript: read failed: %s\n", strerror(errno));
-
-        return scope.Close(scriptResult);
+        fprintf(stderr, "ExecMainScript: read failed: %s\n", strerror(errno));
+        exit(1);
     }
 
     v8::Local<v8::Script> script = v8::Script::Compile(
         v8::String::New(buf, buf_off),
         v8::String::New(fname)
     );
+    free(buf);
+
     if (script.IsEmpty()) {
         assert(try_catch.HasCaught());
-        free(buf);
         LogException(stderr, try_catch);
 
-        return scope.Close(scriptResult);
+        exit(1);
     }
 
-    // XXX: Need a TryCatch around this
     scriptResult = script->Run();
-    assert(!scriptResult.IsEmpty());
+    if (scriptResult.IsEmpty()) {
+        assert(try_catch.HasCaught());
+        LogException(stderr, try_catch);
 
-    free(buf);
+        exit(1);
+    }
 
     return scope.Close(scriptResult);
 }
@@ -141,19 +142,15 @@ main(int argc, char *argv[]) {
     g_v8Ctx = v8::Context::New();
     v8::Context::Scope v8CtxScope(g_v8Ctx);
 
+    atexit(ExitCB);
+
     v8::Local<v8::Object> globalObj = g_v8Ctx->Global();
     globalObj->Set(
         v8::String::NewSymbol("log"),
         v8::FunctionTemplate::New(LogCB)->GetFunction()
     );
 
-    v8::Handle<v8::Value> val = ExecScript(argv[1]);
-    if (val.IsEmpty()) {
-        fprintf(stderr, "%s: ExecScript failed!\n", argv[0]);
-        exit(1);
-    }
-
-    atexit(ExitCB);
+    v8::Handle<v8::Value> val = ExecMainScript(argv[1]);
 
     return 0;
 }
