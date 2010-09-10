@@ -64,7 +64,9 @@ ReadFile(const char *fname) {
     ssize_t nread = 0;
 
     // Open our script file
-    fd = open(fname, O_RDONLY);
+    fd = (strcmp(fname, "-")) ?
+        open(fname, O_RDONLY) :
+        0;
     if (fd < 0) {
         fprintf(
             stderr,
@@ -101,7 +103,9 @@ ReadFile(const char *fname) {
     }
 
     free(buf);
-    close(fd);
+    if (fd > 0) {
+        close(fd);
+    }
 
     return str;
 }
@@ -171,8 +175,6 @@ GetBootLibPath(char *buf, size_t buf_len) {
     return buf;
 }
 
-// TODO: Get script payload from commandline (stdin by default)
-//
 // TODO: Parse arguments using FlagList::SetFlagsFromCommandLine(); use '--' to
 //       delimit V8 options from corona options
 int
