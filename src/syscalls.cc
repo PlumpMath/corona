@@ -252,6 +252,24 @@ Write(const v8::Arguments &args) {
     return scope.Close(v8::Integer::New(err));
 }
 
+// socket(2)
+static v8::Handle<v8::Value>
+Socket(const v8::Arguments &args) {
+    v8::HandleScope scope;
+
+    int domain;
+    int type;
+    int proto;
+    int fd;
+
+    V8_ARG_VALUE(domain, args, 0, Int32);
+    V8_ARG_VALUE(type, args, 1, Int32);
+    V8_ARG_VALUE(proto, args, 2, Int32);
+
+    fd = socket(domain, type, proto);
+    return scope.Close(v8::Integer::New(fd));
+}
+
 // Set system call functions on the given target object
 void InitSyscalls(const v8::Handle<v8::Object> target) {
     InitErrno(target);
@@ -259,6 +277,12 @@ void InitSyscalls(const v8::Handle<v8::Object> target) {
 
     target->Set(
         v8::String::NewSymbol("write"),
-        v8::FunctionTemplate::New(Write)->GetFunction()
+        v8::FunctionTemplate::New(Write)->GetFunction(),
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
+    );
+    target->Set(
+        v8::String::NewSymbol("socket"),
+        v8::FunctionTemplate::New(Socket)->GetFunction(),
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
     );
 }
