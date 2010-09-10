@@ -13,7 +13,7 @@
 #include "corona.h"
 #include "syscalls.h"
 
-static char *g_execname;
+char *g_execname;
 
 static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;

@@ -1,21 +1,32 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <netdb.h>
 #include <v8.h>
 #include "corona.h"
 
-#define SET_ERRNO(target, e) \
+// Set a constant numerical value on the given target
+#define SET_CONST(target, e) \
     (target)->Set( \
-        v8::String::New(#e), \
+        v8::String::NewSymbol(#e), \
         v8::Integer::New(e), \
         (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete) \
     );
 
+// The list of PROTO_* names that we want to fill in using getprotoent(3)
+static const char *proto_names[] = {
+    "TCP",
+    "UDP",
+    NULL
+};
+
+// Accessor for 'errno' property
 static v8::Handle<v8::Value>
 GetErrno(v8::Local<v8::String> name, const v8::AccessorInfo &info) {
     return v8::Integer::New(errno);
 }
 
+// Set errno constants in the target namespace
 static void
 InitErrno(const v8::Handle<v8::Object> target) {
     target->SetAccessor(
@@ -23,166 +34,203 @@ InitErrno(const v8::Handle<v8::Object> target) {
         GetErrno
     );
 
-    SET_ERRNO(target, EPERM);
-    SET_ERRNO(target, ENOENT);
-    SET_ERRNO(target, ESRCH);
-    SET_ERRNO(target, EINTR);
-    SET_ERRNO(target, EIO);
-    SET_ERRNO(target, ENXIO);
-    SET_ERRNO(target, E2BIG);
-    SET_ERRNO(target, ENOEXEC);
-    SET_ERRNO(target, EBADF);
-    SET_ERRNO(target, ECHILD);
-    SET_ERRNO(target, EDEADLK);
-    SET_ERRNO(target, ENOMEM);
-    SET_ERRNO(target, EACCES);
-    SET_ERRNO(target, EFAULT);
+    SET_CONST(target, EPERM);
+    SET_CONST(target, ENOENT);
+    SET_CONST(target, ESRCH);
+    SET_CONST(target, EINTR);
+    SET_CONST(target, EIO);
+    SET_CONST(target, ENXIO);
+    SET_CONST(target, E2BIG);
+    SET_CONST(target, ENOEXEC);
+    SET_CONST(target, EBADF);
+    SET_CONST(target, ECHILD);
+    SET_CONST(target, EDEADLK);
+    SET_CONST(target, ENOMEM);
+    SET_CONST(target, EACCES);
+    SET_CONST(target, EFAULT);
 #ifdef ENOTBLK
-    SET_ERRNO(target, ENOTBLK);
+    SET_CONST(target, ENOTBLK);
 #endif
-    SET_ERRNO(target, EBUSY);
-    SET_ERRNO(target, EEXIST);
-    SET_ERRNO(target, EXDEV);
-    SET_ERRNO(target, ENODEV);
-    SET_ERRNO(target, ENOTDIR);
-    SET_ERRNO(target, EISDIR);
-    SET_ERRNO(target, EINVAL);
-    SET_ERRNO(target, ENFILE);
-    SET_ERRNO(target, EMFILE);
-    SET_ERRNO(target, ENOTTY);
-    SET_ERRNO(target, ETXTBSY);
-    SET_ERRNO(target, EFBIG);
-    SET_ERRNO(target, ENOSPC);
-    SET_ERRNO(target, ESPIPE);
-    SET_ERRNO(target, EROFS);
-    SET_ERRNO(target, EMLINK);
-    SET_ERRNO(target, EPIPE);
-    SET_ERRNO(target, EDOM);
-    SET_ERRNO(target, ERANGE);
-    SET_ERRNO(target, EAGAIN);
-    SET_ERRNO(target, EWOULDBLOCK);
-    SET_ERRNO(target, EINPROGRESS);
-    SET_ERRNO(target, EALREADY);
-    SET_ERRNO(target, ENOTSOCK);
-    SET_ERRNO(target, EDESTADDRREQ);
-    SET_ERRNO(target, EMSGSIZE);
-    SET_ERRNO(target, EPROTOTYPE);
-    SET_ERRNO(target, ENOPROTOOPT);
-    SET_ERRNO(target, EPROTONOSUPPORT);
+    SET_CONST(target, EBUSY);
+    SET_CONST(target, EEXIST);
+    SET_CONST(target, EXDEV);
+    SET_CONST(target, ENODEV);
+    SET_CONST(target, ENOTDIR);
+    SET_CONST(target, EISDIR);
+    SET_CONST(target, EINVAL);
+    SET_CONST(target, ENFILE);
+    SET_CONST(target, EMFILE);
+    SET_CONST(target, ENOTTY);
+    SET_CONST(target, ETXTBSY);
+    SET_CONST(target, EFBIG);
+    SET_CONST(target, ENOSPC);
+    SET_CONST(target, ESPIPE);
+    SET_CONST(target, EROFS);
+    SET_CONST(target, EMLINK);
+    SET_CONST(target, EPIPE);
+    SET_CONST(target, EDOM);
+    SET_CONST(target, ERANGE);
+    SET_CONST(target, EAGAIN);
+    SET_CONST(target, EWOULDBLOCK);
+    SET_CONST(target, EINPROGRESS);
+    SET_CONST(target, EALREADY);
+    SET_CONST(target, ENOTSOCK);
+    SET_CONST(target, EDESTADDRREQ);
+    SET_CONST(target, EMSGSIZE);
+    SET_CONST(target, EPROTOTYPE);
+    SET_CONST(target, ENOPROTOOPT);
+    SET_CONST(target, EPROTONOSUPPORT);
 #ifdef ESOCKTNOSUPPORT
-    SET_ERRNO(target, ESOCKTNOSUPPORT);
+    SET_CONST(target, ESOCKTNOSUPPORT);
 #endif
-    SET_ERRNO(target, ENOTSUP);
+    SET_CONST(target, ENOTSUP);
 #ifdef EOPNOTSUPP
-    SET_ERRNO(target, EOPNOTSUPP);
+    SET_CONST(target, EOPNOTSUPP);
 #endif
 #ifdef EPFNOSUPPORT
-    SET_ERRNO(target, EPFNOSUPPORT);
+    SET_CONST(target, EPFNOSUPPORT);
 #endif
-    SET_ERRNO(target, EAFNOSUPPORT);
-    SET_ERRNO(target, EADDRINUSE);
-    SET_ERRNO(target, EADDRNOTAVAIL);
-    SET_ERRNO(target, ENETDOWN);
-    SET_ERRNO(target, ENETUNREACH);
-    SET_ERRNO(target, ENETRESET);
-    SET_ERRNO(target, ECONNABORTED);
-    SET_ERRNO(target, ECONNRESET);
-    SET_ERRNO(target, ENOBUFS);
-    SET_ERRNO(target, EISCONN);
-    SET_ERRNO(target, ENOTCONN);
+    SET_CONST(target, EAFNOSUPPORT);
+    SET_CONST(target, EADDRINUSE);
+    SET_CONST(target, EADDRNOTAVAIL);
+    SET_CONST(target, ENETDOWN);
+    SET_CONST(target, ENETUNREACH);
+    SET_CONST(target, ENETRESET);
+    SET_CONST(target, ECONNABORTED);
+    SET_CONST(target, ECONNRESET);
+    SET_CONST(target, ENOBUFS);
+    SET_CONST(target, EISCONN);
+    SET_CONST(target, ENOTCONN);
 #ifdef ESHUTDOWN
-    SET_ERRNO(target, ESHUTDOWN);
+    SET_CONST(target, ESHUTDOWN);
 #endif
 #ifdef ETOOMANYREFS
-    SET_ERRNO(target, ETOOMANYREFS);
+    SET_CONST(target, ETOOMANYREFS);
 #endif
-    SET_ERRNO(target, ETIMEDOUT);
-    SET_ERRNO(target, ECONNREFUSED);
-    SET_ERRNO(target, ELOOP);
-    SET_ERRNO(target, ENAMETOOLONG);
+    SET_CONST(target, ETIMEDOUT);
+    SET_CONST(target, ECONNREFUSED);
+    SET_CONST(target, ELOOP);
+    SET_CONST(target, ENAMETOOLONG);
 #ifdef EHOSTDOWN
-    SET_ERRNO(target, EHOSTDOWN);
+    SET_CONST(target, EHOSTDOWN);
 #endif
-    SET_ERRNO(target, EHOSTUNREACH);
-    SET_ERRNO(target, ENOTEMPTY);
+    SET_CONST(target, EHOSTUNREACH);
+    SET_CONST(target, ENOTEMPTY);
 #ifdef EPROCLIM
-    SET_ERRNO(target, EPROCLIM);
+    SET_CONST(target, EPROCLIM);
 #endif
 #ifdef EUSERS
-    SET_ERRNO(target, EUSERS);
+    SET_CONST(target, EUSERS);
 #endif
-    SET_ERRNO(target, EDQUOT);
-    SET_ERRNO(target, ESTALE);
+    SET_CONST(target, EDQUOT);
+    SET_CONST(target, ESTALE);
 #ifdef EREMOTE
-    SET_ERRNO(target, EREMOTE);
+    SET_CONST(target, EREMOTE);
 #endif
 #ifdef EBADRPC
-    SET_ERRNO(target, EBADRPC);
+    SET_CONST(target, EBADRPC);
 #endif
 #ifdef ERPCMISMATCH
-    SET_ERRNO(target, ERPCMISMATCH);
+    SET_CONST(target, ERPCMISMATCH);
 #endif
 #ifdef EPROGUNAVAIL
-    SET_ERRNO(target, EPROGUNAVAIL);
+    SET_CONST(target, EPROGUNAVAIL);
 #endif
 #ifdef EPROGMISMATCH
-    SET_ERRNO(target, EPROGMISMATCH);
+    SET_CONST(target, EPROGMISMATCH);
 #endif
 #ifdef EPROCUNAVAIL
-    SET_ERRNO(target, EPROCUNAVAIL);
+    SET_CONST(target, EPROCUNAVAIL);
 #endif
-    SET_ERRNO(target, ENOLCK);
-    SET_ERRNO(target, ENOSYS);
+    SET_CONST(target, ENOLCK);
+    SET_CONST(target, ENOSYS);
 #ifdef EFTYPE
-    SET_ERRNO(target, EFTYPE);
+    SET_CONST(target, EFTYPE);
 #endif
 #ifdef EAUTH
-    SET_ERRNO(target, EAUTH);
+    SET_CONST(target, EAUTH);
 #endif
 #ifdef ENEEDAUTH
-    SET_ERRNO(target, ENEEDAUTH);
+    SET_CONST(target, ENEEDAUTH);
 #endif
 #ifdef EPWROFF
-    SET_ERRNO(target, EPWROFF);
+    SET_CONST(target, EPWROFF);
 #endif
 #ifdef EDEVERR
-    SET_ERRNO(target, EDEVERR);
+    SET_CONST(target, EDEVERR);
 #endif
-    SET_ERRNO(target, EOVERFLOW);
+    SET_CONST(target, EOVERFLOW);
 #ifdef EBADEXEC
-    SET_ERRNO(target, EBADEXEC);
+    SET_CONST(target, EBADEXEC);
 #endif
 #ifdef EBADARCH
-    SET_ERRNO(target, EBADARCH);
+    SET_CONST(target, EBADARCH);
 #endif
 #ifdef ESHLIBVERS
-    SET_ERRNO(target, ESHLIBVERS);
+    SET_CONST(target, ESHLIBVERS);
 #endif
 #ifdef EBADMACHO
-    SET_ERRNO(target, EBADMACHO);
+    SET_CONST(target, EBADMACHO);
 #endif
-    SET_ERRNO(target, ECANCELED);
-    SET_ERRNO(target, EIDRM);
-    SET_ERRNO(target, ENOMSG);
-    SET_ERRNO(target, EILSEQ);
+    SET_CONST(target, ECANCELED);
+    SET_CONST(target, EIDRM);
+    SET_CONST(target, ENOMSG);
+    SET_CONST(target, EILSEQ);
 #ifdef ENOATTR
-    SET_ERRNO(target, ENOATTR);
+    SET_CONST(target, ENOATTR);
 #endif
-    SET_ERRNO(target, EBADMSG);
-    SET_ERRNO(target, EMULTIHOP);
-    SET_ERRNO(target, ENODATA);
-    SET_ERRNO(target, ENOLINK);
-    SET_ERRNO(target, ENOSR);
-    SET_ERRNO(target, ENOSTR);
-    SET_ERRNO(target, EPROTO);
-    SET_ERRNO(target, ETIME);
+    SET_CONST(target, EBADMSG);
+    SET_CONST(target, EMULTIHOP);
+    SET_CONST(target, ENODATA);
+    SET_CONST(target, ENOLINK);
+    SET_CONST(target, ENOSR);
+    SET_CONST(target, ENOSTR);
+    SET_CONST(target, EPROTO);
+    SET_CONST(target, ETIME);
 #ifdef EOPNOTSUPP
-    SET_ERRNO(target, EOPNOTSUPP);
+    SET_CONST(target, EOPNOTSUPP);
 #endif
-    SET_ERRNO(target, ENOPOLICY);
+    SET_CONST(target, ENOPOLICY);
 #ifdef ELAST
-    SET_ERRNO(target, ELAST);
+    SET_CONST(target, ELAST);
 #endif
+}
+
+// Set networking-related constants in the target namespace
+static void
+InitNet(const v8::Handle<v8::Object> target) {
+    char buf[512];
+    int i;
+
+    // AF_*
+    SET_CONST(target, AF_UNIX);
+    SET_CONST(target, AF_INET);
+
+    // SOCK_*
+    SET_CONST(target, SOCK_STREAM);
+    SET_CONST(target, SOCK_DGRAM);
+
+    // PROTO_*
+    for (i = 0; proto_names[i]; i++) {
+        struct protoent *pent;
+        
+        if (!(pent = getprotobyname(proto_names[i]))) {
+            fprintf(
+                stderr,
+                "%s: warning: could not resolve protocol %s\n",
+                    g_execname, proto_names[i]
+            );
+            continue;
+        }
+
+        sprintf(buf, "PROTO_%s", proto_names[i]);
+
+        target->Set(
+            v8::String::NewSymbol(buf),
+            v8::Integer::New(pent->p_proto),
+            (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
+        );
+    }
 }
 
 // write(2)
@@ -207,6 +255,7 @@ Write(const v8::Arguments &args) {
 // Set system call functions on the given target object
 void InitSyscalls(const v8::Handle<v8::Object> target) {
     InitErrno(target);
+    InitNet(target);
 
     target->Set(
         v8::String::NewSymbol("write"),

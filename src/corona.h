@@ -64,4 +64,8 @@ CreateNamespace(v8::Handle<v8::Object> target, v8::Handle<v8::String> name) {
     return o;
 }
 
+// Misc globals
+
+extern char *g_execname;
+
 #endif /* __corona_corona_h__ */
