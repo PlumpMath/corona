@@ -59,7 +59,11 @@ static inline v8::Handle<v8::Object>
 CreateNamespace(v8::Handle<v8::Object> target, v8::Handle<v8::String> name) {
     v8::Local<v8::Object> o =
         (v8::FunctionTemplate::New())->GetFunction()->NewInstance();
-    target->Set(name, o);
+    target->Set(
+        name,
+        o,
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
+    );
 
     return o;
 }
