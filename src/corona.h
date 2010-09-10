@@ -35,11 +35,10 @@
     } while (0)
 
 #define V8_ARG_VALUE_UTF8(lval, args, index) \
-    do { \
-        V8_ARG_EXISTS(args, index); \
-        V8_ARG_TYPE(args, index, String); \
-        (lval) = *v8::String::Utf8Value((args)[(index)]->ToString()); \
-    } while (0)
+    V8_ARG_EXISTS(args, index); \
+    V8_ARG_TYPE(args, index, String); \
+    v8::String::Utf8Value lval##__((args)[(index)]->ToString()); \
+    (lval) = *lval##__
 
 #define V8_ARG_VALUE_FD(lval, args, index) \
     do { \
