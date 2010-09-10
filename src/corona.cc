@@ -10,9 +10,12 @@
 #include <errno.h>
 #include <v8.h>
 #include "corona.h"
+#include "syscalls.h"
+
+static char *g_execname;
 
 static v8::Persistent<v8::Context> g_v8Ctx;
-static char *g_execname;
+static v8::Persistent<v8::Object> g_sysObj;
 
 // atexit() handler; tears down all global state
 static void
@@ -26,25 +29,6 @@ static void
 FatalErrorCB(const char *loc, const char *msg) {
     fprintf(stderr, "%s: %s %s\n", g_execname, ((loc) ? loc : ""), msg);
     exit(1);
-}
-
-// write(2)
-static v8::Handle<v8::Value>
-Write(const v8::Arguments &args) {
-    v8::HandleScope scope;
-
-    int32_t fd = -1;
-    char *buf = NULL;
-    size_t buf_len = 0;
-    int err;
-
-    V8_ARG_VALUE_FD(fd, args, 0);
-    V8_ARG_VALUE_UTF8(buf, args, 1);
-    buf_len = args[1]->ToString()->Utf8Length();
-
-    err = write(fd, buf, buf_len);
-
-    return scope.Close(v8::Integer::New(err));
 }
 
 // Log an exception to stderr
@@ -155,10 +139,10 @@ main(int argc, char *argv[]) {
     atexit(ExitCB);
 
     v8::Local<v8::Object> globalObj = g_v8Ctx->Global();
-    globalObj->Set(
-        v8::String::NewSymbol("write"),
-        v8::FunctionTemplate::New(Write)->GetFunction()
+    g_sysObj = v8::Persistent<v8::Object>::New(
+        CreateNamespace(globalObj, v8::String::New("sys"))
     );
+    InitSyscalls(g_sysObj);
 
     v8::Handle<v8::Value> val = ExecMainScript(argv[1]);
 

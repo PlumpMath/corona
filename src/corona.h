@@ -1,6 +1,10 @@
 #ifndef __corona_corona_h__
 #define __corona_corona_h__
 
+#include <v8.h>
+
+// Helper macros for argument parsing
+
 #define V8_ARG_EXISTS(args, index) \
     do { \
         if ((args).Length() < ((index) + 1)) { \
@@ -48,5 +52,16 @@
             )); \
         } \
     } while (0)
+
+// Helper functions for other V8 interactions
+
+static inline v8::Handle<v8::Object>
+CreateNamespace(v8::Handle<v8::Object> target, v8::Handle<v8::String> name) {
+    v8::Local<v8::Object> o =
+        (v8::FunctionTemplate::New())->GetFunction()->NewInstance();
+    target->Set(name, o);
+
+    return o;
+}
 
 #endif /* __corona_corona_h__ */

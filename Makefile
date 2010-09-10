@@ -18,7 +18,7 @@ build/benchd: build/obj/benchd.o
 build/bench: build/obj/bench.o
 	$(CC) $(LDFLAGS) -o $@ $^
 
-build/corona: build/obj/corona.o
+build/corona: build/obj/corona.o build/obj/syscalls.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 build/obj/%.o: src/%.c build/obj deps
