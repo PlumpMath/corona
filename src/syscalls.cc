@@ -241,7 +241,7 @@ InitNet(const v8::Handle<v8::Object> target) {
 
 // write(2)
 //
-// <nbytes> = write(fd, <string>)
+// <nbytes> = write(<fd>, <string>)
 static v8::Handle<v8::Value>
 Write(const v8::Arguments &args) {
     v8::HandleScope scope;
@@ -351,6 +351,24 @@ Bind(const v8::Arguments &args) {
     return scope.Close(v8::Integer::New(err));
 }
 
+// listen(2)
+//
+// <err> = listen(<fd>, <backlog>)
+static v8::Handle<v8::Value>
+Listen(const v8::Arguments &args) {
+    v8::HandleScope scope;
+
+    int fd = -1;
+    int backlog = -1;
+    int err;
+
+    V8_ARG_VALUE_FD(fd, args, 0);
+    V8_ARG_VALUE(backlog, args, 1, Int32);
+
+    err = listen(fd, backlog);
+    return scope.Close(v8::Integer::New(err));
+}
+
 // Set system call functions on the given target object
 void InitSyscalls(const v8::Handle<v8::Object> target) {
     InitErrno(target);
@@ -369,6 +387,11 @@ void InitSyscalls(const v8::Handle<v8::Object> target) {
     target->Set(
         v8::String::NewSymbol("bind"),
         v8::FunctionTemplate::New(Bind)->GetFunction(),
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
+    );
+    target->Set(
+        v8::String::NewSymbol("listen"),
+        v8::FunctionTemplate::New(Listen)->GetFunction(),
         (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
     );
 }
