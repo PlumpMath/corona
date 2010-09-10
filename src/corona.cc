@@ -27,14 +27,54 @@ FatalErrorCB(const char *loc, const char *msg) {
     exit(1);
 }
 
-// This is a test
+// write(2)
 static v8::Handle<v8::Value>
-LogCB(const v8::Arguments &args) {
+Write(const v8::Arguments &args) {
     v8::HandleScope scope;
 
-    fprintf(stderr, "LogCB()\n");
+    int32_t fd = -1;
+    char *buf = NULL;
+    size_t buf_len = 0;
+    int err;
 
-    return scope.Close(v8::Undefined());
+    if (args.Length() < 1) {
+        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
+            "Missing required first argument: fd"
+        )));
+    }
+
+    if (!args[0]->IsNumber()) {
+        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
+            "First argument is not a number"
+        )));
+    }
+
+    fd = args[0]->Int32Value();
+    if (fd < 0) {
+        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
+            "First argument is not a positive integer"
+        )));
+    }
+
+    if (args.Length() < 2) {
+        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
+            "Missing required second argument: str"
+        )));
+    }
+
+    if (!args[1]->IsString()) {
+        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
+            "Second argument is not a string"
+        )));
+    }
+
+
+    buf = *v8::String::Utf8Value(args[1]->ToString());
+    buf_len = args[1]->ToString()->Utf8Length();
+
+    err = write(fd, buf, buf_len);
+
+    return scope.Close(v8::Integer::New(err));
 }
 
 // Log an exception to stderr
@@ -146,8 +186,8 @@ main(int argc, char *argv[]) {
 
     v8::Local<v8::Object> globalObj = g_v8Ctx->Global();
     globalObj->Set(
-        v8::String::NewSymbol("log"),
-        v8::FunctionTemplate::New(LogCB)->GetFunction()
+        v8::String::NewSymbol("write"),
+        v8::FunctionTemplate::New(Write)->GetFunction()
     );
 
     v8::Handle<v8::Value> val = ExecMainScript(argv[1]);
