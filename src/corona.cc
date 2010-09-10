@@ -3,6 +3,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <sys/param.h>
 #include <unistd.h>
 #include <string.h>
 #include <libgen.h>
@@ -50,28 +51,27 @@ LogException(FILE *fp, v8::TryCatch &try_catch) {
     );
 }
 
-// Execute the script held in a file of the given name
+// Load the contents of the given file into a v8::String
 //
-// The script is run in the current context and its result value is returned.
-// On error, the process is exited.
-static v8::Handle<v8::Value>
-ExecMainScript(const char *fname) {
-    v8::HandleScope scope;
-    v8::Handle<v8::Value> scriptResult;
-    v8::TryCatch try_catch;
+// Returns an empty handle on error.
+static v8::Local<v8::String>
+ReadFile(const char *fname) {
+    v8::Local<v8::String> str;
     int fd = -1;
     char *buf = NULL;
     size_t buf_sz = 4;
     size_t buf_off = 0;
     ssize_t nread = 0;
 
-    assert(scriptResult.IsEmpty());
-
     // Open our script file
     fd = open(fname, O_RDONLY);
     if (fd < 0) {
-        fprintf(stderr, "ExecMainScript: open failed: %s\n", strerror(errno));
-        exit(1);
+        fprintf(
+            stderr,
+            "%s: ReadFile open failed: %s\n",
+                g_execname, strerror(errno)
+        );
+        return str;
     }
 
     // Read our script file, resizing the buffer as necessary
@@ -90,23 +90,43 @@ ExecMainScript(const char *fname) {
         }
     }
 
-    if (nread < 0) {
-        free(buf);
-        fprintf(stderr, "ExecMainScript: read failed: %s\n", strerror(errno));
-        exit(1);
+    if (nread >= 0) {
+        str = v8::String::New(buf, buf_off);
+    } else {
+        fprintf(
+            stderr,
+            "%s: ReadFile read failed: %s\n",
+                g_execname, strerror(errno)
+        );
     }
 
-    v8::Local<v8::Script> script = v8::Script::Compile(
-        v8::String::New(buf, buf_off),
-        v8::String::New(fname)
-    );
     free(buf);
+    close(fd);
 
+    return str;
+}
+
+// Execute the JavaScript file of the given name
+//
+// The script is run in the current V8 context and its result value is
+// returned. On error, an empty value is returned.
+static v8::Local<v8::Value>
+ExecFile(const char *fname) {
+    v8::Local<v8::Value> scriptResult;
+    v8::TryCatch try_catch;
+
+    v8::Local<v8::String> fileContents = ReadFile(fname);
+    if (fileContents.IsEmpty()) {
+        return scriptResult;
+    }
+
+    v8::Local<v8::Script> script =
+        v8::Script::Compile(fileContents, v8::String::New(fname));
     if (script.IsEmpty()) {
         assert(try_catch.HasCaught());
         LogException(stderr, try_catch);
 
-        exit(1);
+        return scriptResult;
     }
 
     scriptResult = script->Run();
@@ -114,10 +134,41 @@ ExecMainScript(const char *fname) {
         assert(try_catch.HasCaught());
         LogException(stderr, try_catch);
 
-        exit(1);
+        return scriptResult;
     }
 
-    return scope.Close(scriptResult);
+    return scriptResult;
+}
+
+// Get the path to our JavaScript libraries
+//
+// XXX: This always return $PWD/lib. Fix.
+static char *
+GetLibPath(char *buf, size_t buf_len) {
+    char *cwd = getcwd(NULL, MAXPATHLEN);
+
+    if (snprintf(buf, buf_len, "%s/%s", cwd, "lib") >= (int) buf_len) {
+        buf = NULL;
+    }
+
+    free(cwd);
+    return buf;
+}
+
+// Get the path to our boot.js file
+static char *
+GetBootLibPath(char *buf, size_t buf_len) {
+    char lib_buf[MAXPATHLEN];
+
+    if (!GetLibPath(lib_buf, sizeof(lib_buf))) {
+        return NULL;
+    }
+
+    if (snprintf(buf, buf_len, "%s/%s", lib_buf, "boot.js") >= (int) buf_len) {
+        return NULL;
+    }
+
+    return buf;
 }
 
 // TODO: Get script payload from commandline (stdin by default)
@@ -126,6 +177,8 @@ ExecMainScript(const char *fname) {
 //       delimit V8 options from corona options
 int
 main(int argc, char *argv[]) {
+    char boot_path[MAXPATHLEN];
+
     g_execname = basename(argv[0]);
 
     v8::V8::Initialize();
@@ -144,7 +197,20 @@ main(int argc, char *argv[]) {
     );
     InitSyscalls(g_sysObj);
 
-    v8::Handle<v8::Value> val = ExecMainScript(argv[1]);
+    if (!GetBootLibPath(boot_path, sizeof(boot_path))) {
+        fprintf(stderr, "%s: unable to determine boot path\n", g_execname);
+        exit(1);
+    }
+
+    v8::Handle<v8::Value> val = ExecFile(boot_path);
+    if (val.IsEmpty()) {
+        exit(1);
+    }
+
+    val = ExecFile(argv[1]);
+    if (val.IsEmpty()) {
+        exit(1);
+    }
 
     return 0;
 }
