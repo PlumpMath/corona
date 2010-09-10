@@ -17,7 +17,7 @@
         v8::String::NewSymbol(#e), \
         v8::Integer::New(e), \
         (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete) \
-    );
+    )
 
 // The list of PROTO_* names that we want to fill in using getprotoent(3)
 static const char *proto_names[] = {
@@ -202,6 +202,17 @@ InitErrno(const v8::Handle<v8::Object> target) {
 #endif
 }
 
+// Set fcntl-related constants in the target namespace
+static void
+InitFcntl(const v8::Handle<v8::Object> target) {
+    SET_CONST(target, F_GETFL);
+    SET_CONST(target, F_SETFL);
+
+    SET_CONST(target, O_NONBLOCK);
+    SET_CONST(target, O_APPEND);
+    SET_CONST(target, O_ASYNC);
+}
+
 // Set networking-related constants in the target namespace
 static void
 InitNet(const v8::Handle<v8::Object> target) {
@@ -369,9 +380,45 @@ Listen(const v8::Arguments &args) {
     return scope.Close(v8::Integer::New(err));
 }
 
+// fcntl(2)
+//
+// <val> = fcntl(<fd>, <cmd>, ...)
+static v8::Handle<v8::Value>
+Fcntl(const v8::Arguments &args) {
+    v8::HandleScope scope;
+
+    int fd = -1;
+    int cmd = -1;
+    int flags = 0;
+    int err = -1;
+
+    V8_ARG_VALUE_FD(fd, args, 0);
+    V8_ARG_VALUE(cmd, args, 1, Int32);
+
+    // Read the remaining values and execute the system call
+    switch (cmd) {
+    case F_GETFL:
+        err = fcntl(fd, cmd);
+        break;
+
+    case F_SETFL:
+        V8_ARG_VALUE(flags, args, 2, Int32);
+        err = fcntl(fd, cmd, flags);
+        break;
+
+    default:
+        return v8::ThrowException(v8::Exception::Error(v8::String::New(
+            "Unknown command specified"
+        )));
+    }
+
+    return scope.Close(v8::Integer::New(err));
+}
+
 // Set system call functions on the given target object
 void InitSyscalls(const v8::Handle<v8::Object> target) {
     InitErrno(target);
+    InitFcntl(target);
     InitNet(target);
 
     target->Set(
@@ -392,6 +439,11 @@ void InitSyscalls(const v8::Handle<v8::Object> target) {
     target->Set(
         v8::String::NewSymbol("listen"),
         v8::FunctionTemplate::New(Listen)->GetFunction(),
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
+    );
+    target->Set(
+        v8::String::NewSymbol("fcntl"),
+        v8::FunctionTemplate::New(Fcntl)->GetFunction(),
         (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
     );
 }
