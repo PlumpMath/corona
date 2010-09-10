@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <v8.h>
+#include "corona.h"
 
 static v8::Persistent<v8::Context> g_v8Ctx;
 static char *g_execname;
@@ -37,39 +38,8 @@ Write(const v8::Arguments &args) {
     size_t buf_len = 0;
     int err;
 
-    if (args.Length() < 1) {
-        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
-            "Missing required first argument: fd"
-        )));
-    }
-
-    if (!args[0]->IsNumber()) {
-        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
-            "First argument is not a number"
-        )));
-    }
-
-    fd = args[0]->Int32Value();
-    if (fd < 0) {
-        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
-            "First argument is not a positive integer"
-        )));
-    }
-
-    if (args.Length() < 2) {
-        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
-            "Missing required second argument: str"
-        )));
-    }
-
-    if (!args[1]->IsString()) {
-        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
-            "Second argument is not a string"
-        )));
-    }
-
-
-    buf = *v8::String::Utf8Value(args[1]->ToString());
+    V8_ARG_VALUE_FD(fd, args, 0);
+    V8_ARG_VALUE_UTF8(buf, args, 1);
     buf_len = args[1]->ToString()->Utf8Length();
 
     err = write(fd, buf, buf_len);
