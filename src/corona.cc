@@ -11,12 +11,13 @@
 #include <errno.h>
 #include <v8.h>
 #include "corona.h"
-#include "syscalls.h"
 
 char *g_execname;
 
 static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;
+
+void InitSyscalls(v8::Handle<v8::Object> target);
 
 // atexit() handler; tears down all global state
 static void
