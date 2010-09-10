@@ -1,6 +1,8 @@
 #ifndef __corona_corona_h__
 #define __corona_corona_h__
 
+#include <string.h>
+#include <stdarg.h>
 #include <v8.h>
 
 // Helper macros for argument parsing
@@ -45,15 +47,17 @@
         V8_ARG_VALUE(lval, args, index, Int32); \
         if ((lval) < 0) { \
             return v8::ThrowException(v8::Exception::TypeError( \
-                v8::String::New( \
-                    "Argument at index " #index " not a valid file descriptor" \
+                FormatString( \
+                    "Argument at index %d not a valid file descriptor: %d", \
+                        (index), (lval) \
                 ) \
             )); \
         } \
     } while (0)
 
-// Helper functions for other V8 interactions
+// Misc helper functions for other V8 interactions
 
+// Create a namespace object of the given name inside a target
 static inline v8::Handle<v8::Object>
 CreateNamespace(v8::Handle<v8::Object> target, v8::Handle<v8::String> name) {
     v8::Local<v8::Object> o =
@@ -65,6 +69,19 @@ CreateNamespace(v8::Handle<v8::Object> target, v8::Handle<v8::String> name) {
     );
 
     return o;
+}
+
+// Return a new V8 string, formatted as specified
+static inline v8::Handle<v8::String>
+FormatString(const char *fmt, ...) {
+    static char buf[1024];
+    va_list ap;
+
+    va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    va_end(ap);
+
+    return v8::String::New(buf);
 }
 
 // Misc globals

@@ -313,8 +313,8 @@ Bind(const v8::Arguments &args) {
 
         port = args[1]->Int32Value();
         if (port < 0) {
-            return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
-                "Port argument must be a positive integer"
+            return v8::ThrowException(v8::Exception::TypeError(FormatString(
+                "Port argument must be a positive integer: %d", port
             )));
         }
 
@@ -335,8 +335,8 @@ Bind(const v8::Arguments &args) {
         addr_in.sin_family = AF_INET;
         addr_in.sin_port = htons(port);
         if (!inet_aton(addr_str, &addr_in.sin_addr)) {
-            return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
-                "Invalid address argument specified"
+            return v8::ThrowException(v8::Exception::TypeError(FormatString(
+                "Invalid address argument specified: %s", addr_str
             )));
         }
 
@@ -407,8 +407,8 @@ Fcntl(const v8::Arguments &args) {
         break;
 
     default:
-        return v8::ThrowException(v8::Exception::Error(v8::String::New(
-            "Unknown command specified"
+        return v8::ThrowException(v8::Exception::Error(FormatString(
+            "Unknown command specified: %d", cmd
         )));
     }
 
