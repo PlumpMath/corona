@@ -1,7 +1,13 @@
 #include <errno.h>
+#include <stddef.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <netdb.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <string.h>
 #include <v8.h>
 #include "corona.h"
 
@@ -234,6 +240,8 @@ InitNet(const v8::Handle<v8::Object> target) {
 }
 
 // write(2)
+//
+// <nbytes> = write(fd, <string>)
 static v8::Handle<v8::Value>
 Write(const v8::Arguments &args) {
     v8::HandleScope scope;
@@ -241,26 +249,27 @@ Write(const v8::Arguments &args) {
     int32_t fd = -1;
     char *buf = NULL;
     size_t buf_len = 0;
-    int err;
+    int err = -1;
 
     V8_ARG_VALUE_FD(fd, args, 0);
     V8_ARG_VALUE_UTF8(buf, args, 1);
     buf_len = args[1]->ToString()->Utf8Length();
 
     err = write(fd, buf, buf_len);
-
     return scope.Close(v8::Integer::New(err));
 }
 
 // socket(2)
+//
+// <fd> = socket(<af-value>, <pf-value>, <proto-value>)
 static v8::Handle<v8::Value>
 Socket(const v8::Arguments &args) {
     v8::HandleScope scope;
 
-    int domain;
-    int type;
-    int proto;
-    int fd;
+    int domain = -1;
+    int type = -1;
+    int proto = -1;
+    int fd = -1;
 
     V8_ARG_VALUE(domain, args, 0, Int32);
     V8_ARG_VALUE(type, args, 1, Int32);
@@ -268,6 +277,78 @@ Socket(const v8::Arguments &args) {
 
     fd = socket(domain, type, proto);
     return scope.Close(v8::Integer::New(fd));
+}
+
+// bind(2)
+//
+// <err> = bind(<fd>, <port>[, <address>])
+// <err> = bind(<fd>, <path>)
+static v8::Handle<v8::Value>
+Bind(const v8::Arguments &args) {
+    v8::HandleScope scope;
+
+    int fd = -1;
+    int err = -1;
+    struct sockaddr *addr = NULL;
+    struct sockaddr_in addr_in;
+    struct sockaddr_un addr_un;
+
+    V8_ARG_VALUE_FD(fd, args, 0);
+
+    V8_ARG_EXISTS(args, 1);
+    if (args[1]->IsNumber()) {
+        int port = -1;
+        char *addr_str = NULL;
+
+        port = args[1]->Int32Value();
+        if (port < 0) {
+            return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
+                "Port argument must be a positive integer"
+            )));
+        }
+
+        if (args.Length() >= 3) {
+            if (!args[2]->IsString()) {
+                return v8::ThrowException(v8::Exception::TypeError(
+                    v8::String::New(
+                        "Address argument must be a string"
+                    )
+                ));
+            }
+
+            V8_ARG_VALUE_UTF8(addr_str, args, 2);
+        }
+
+        bzero(&addr_in, sizeof(addr_in));
+        addr_in.sin_len = sizeof(addr_in);
+        addr_in.sin_family = AF_INET;
+        addr_in.sin_port = htons(port);
+        if (!inet_aton(addr_str, &addr_in.sin_addr)) {
+            return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
+                "Invalid address argument specified"
+            )));
+        }
+
+        addr = (struct sockaddr*) &addr_in;
+    } else if (args[1]->IsString()) {
+        char *path;
+
+        V8_ARG_VALUE_UTF8(path, args, 1);
+
+        bzero(&addr_un, sizeof(addr_un));
+        addr_un.sun_len = offsetof(struct sockaddr_un, sun_path) + strlen(path);
+        addr_un.sun_family = AF_UNIX;
+        strcpy(addr_un.sun_path, path);
+
+        addr = (struct sockaddr*) &addr_un;
+    } else {
+        return v8::ThrowException(v8::Exception::TypeError(v8::String::New(
+            "Argument at index 1 must be either a port or a path"
+        )));
+    }
+
+    err = bind(fd, addr, addr->sa_len);
+    return scope.Close(v8::Integer::New(err));
 }
 
 // Set system call functions on the given target object
@@ -283,6 +364,11 @@ void InitSyscalls(const v8::Handle<v8::Object> target) {
     target->Set(
         v8::String::NewSymbol("socket"),
         v8::FunctionTemplate::New(Socket)->GetFunction(),
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
+    );
+    target->Set(
+        v8::String::NewSymbol("bind"),
+        v8::FunctionTemplate::New(Bind)->GetFunction(),
         (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
     );
 }
