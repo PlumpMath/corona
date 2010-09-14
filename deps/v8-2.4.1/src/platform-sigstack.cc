@@ -99,29 +99,29 @@ typedef struct sigthread_s {
 } sigthread_t;
 
 
-static sigthread_t main_thread_ = {
-  0,
-  {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0,
-  },
-  NULL,
-  NULL,
-  NULL,
-  {
-    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-    NULL, NULL, NULL, NULL, NULL, NULL
-  }
-};
+static sigthread_t sigthread_empty(void);
+
+
+static sigthread_t main_thread_ = sigthread_empty();
 static int next_current_thread_id_ = main_thread_.st_id + 1;
 static sigthread_t *current_thread_ = &main_thread_;
 static bool sigthread_trampoline_complete_ = false;
 static int next_local_ = 0;
 
+
 static inline void
 sigthread_init(sigthread_t *st) {
   bzero(st, sizeof(*st));
   st->st_id = kNoThread;
+}
+
+
+static inline sigthread_t
+sigthread_empty(void) {
+  sigthread_t st;
+  sigthread_init(&st);
+
+  return st;
 }
 
 
