@@ -160,6 +160,12 @@ LIBRARY_FLAGS = {
         'CPPDEFINES': ['V8_SHARED']
       }
     },
+    'os:sigstack': {
+      'CCFLAGS':      ['-ansi', '-mmacosx-version-min=10.4'],
+      'library:shared': {
+        'CPPDEFINES': ['V8_SHARED']
+      }
+    },
     'os:freebsd': {
       'CPPPATH' : ['/usr/local/include'],
       'LIBPATH' : ['/usr/local/lib'],
@@ -311,6 +317,9 @@ V8_EXTRA_FLAGS = {
     'os:macos': {
       'WARNINGFLAGS': ['-pedantic']
     },
+    'os:sigstack': {
+      'WARNINGFLAGS': ['-pedantic']
+    },
     'disassembler:on': {
       'CPPDEFINES':   ['ENABLE_DISASSEMBLER']
     }
@@ -346,6 +355,8 @@ MKSNAPSHOT_EXTRA_FLAGS = {
     },
     'os:macos': {
       'LIBS': ['pthread'],
+    },
+    'os:sigstack': {
     },
     'os:freebsd': {
       'LIBS': ['execinfo', 'pthread']
@@ -398,6 +409,8 @@ CCTEST_EXTRA_FLAGS = {
     },
     'os:macos': {
       'LIBS':         ['pthread'],
+    },
+    'os:sigstack': {
     },
     'os:freebsd': {
       'LIBS':         ['execinfo', 'pthread']
@@ -462,6 +475,8 @@ SAMPLE_FLAGS = {
     },
     'os:macos': {
       'LIBS':         ['pthread'],
+    },
+    'os:sigstack': {
     },
     'os:freebsd': {
       'LIBPATH' : ['/usr/local/lib'],
@@ -602,6 +617,8 @@ D8_FLAGS = {
     'os:macos': {
       'LIBS': ['pthread'],
     },
+    'os:sigstack': {
+    },
     'os:freebsd': {
       'LIBS': ['pthread'],
     },
@@ -666,7 +683,7 @@ SIMPLE_OPTIONS = {
     'help': 'the toolchain to use (' + TOOLCHAIN_GUESS + ')'
   },
   'os': {
-    'values': ['freebsd', 'linux', 'macos', 'win32', 'android', 'openbsd', 'solaris'],
+    'values': ['freebsd', 'linux', 'macos', 'sigstack', 'win32', 'android', 'openbsd', 'solaris'],
     'default': OS_GUESS,
     'help': 'the os to build for (' + OS_GUESS + ')'
   },

@@ -201,6 +201,7 @@ SOURCES = {
   'os:linux':   ['platform-linux.cc', 'platform-posix.cc'],
   'os:android': ['platform-linux.cc', 'platform-posix.cc'],
   'os:macos':   ['platform-macos.cc', 'platform-posix.cc'],
+  'os:sigstack':   ['platform-sigstack.cc', 'platform-posix.cc'],
   'os:solaris': ['platform-solaris.cc', 'platform-posix.cc'],
   'os:nullos':  ['platform-nullos.cc'],
   'os:win32':   ['platform-win32.cc'],
