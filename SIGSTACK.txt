@@ -14,5 +14,3 @@ Some TODOs/bugs:
 
     - Implement corona purely in terms of v8::internal::Thread instances; this
       way we can switch between a backends (more) easily.
-
-    - Fix explicit call to Thread::Initialize() in sj.cc. We shouldn't need this.

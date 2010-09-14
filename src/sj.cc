@@ -71,7 +71,6 @@ main(int argc, char *argv[]) {
     }
 
     TestThread tt;
-    tt.Initialize(v8::internal::ThreadHandle::INVALID);
     tt.Start();
 
     return 0;
