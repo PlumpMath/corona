@@ -8,7 +8,7 @@ CXXFLAGS = $(CFLAGS)
 LDFLAGS = -Ldeps/build/lib
 LDFLAGS += -lcoro -lev -lv8_g
 
-.PHONY: all deps
+.PHONY: all deps ctags cscope
 
 all: deps build/benchd build/bench build/corona
 
@@ -42,11 +42,17 @@ deps:
 		cp libv8_g.a $(shell pwd -P)/deps/build/lib && \
 		cp include/*.h $(shell pwd -P)/deps/build/include
 
-tags:
+ctags:
 	rm -f tags
 	find . -name '*.[ch]' -or -name '*.cc' | ctags -L -
-	find /usr/include | ctags -L - -a
-	find /opt/local/include | ctags -L - -a
+	find /usr/include -name '*.h' | ctags -L - -a
+	find /opt/local/include -name '*.h' | ctags -L - -a
+
+cscope:
+	rm -f cscope.out
+	find . -name '*.[ch]' -or -name '*.cc' | cscope -b -i -
+	find /usr/include -name '*.h' | cscope -b -i -
+	find /opt/local/include -name '*.h' | cscope -b -i -
 
 clean:
 	rm -fr deps/build
