@@ -55,6 +55,13 @@
         } \
     } while (0)
 
+#define V8_ARG_VALUE_FUNCTION(lval, args, index) \
+    do { \
+        V8_ARG_EXISTS(args, index); \
+        V8_ARG_TYPE(args, index, Function); \
+        (lval) = v8::Local<v8::Function>::Cast((args)[(index)]); \
+    } while (0)
+
 // Misc helper functions for other V8 interactions
 
 // Create a namespace object of the given name inside a target
@@ -86,6 +93,11 @@ FormatString(const char *fmt, ...) {
 
 // Misc globals
 
+struct ev_loop;
+struct coro_context;
+
 extern char *g_execname;
+extern struct ev_loop *g_loop;
+extern struct coro_context *g_loop_ctx;
 
 #endif /* __corona_corona_h__ */

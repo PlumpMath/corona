@@ -10,9 +10,19 @@
 #include <ctype.h>
 #include <errno.h>
 #include <v8.h>
+#include <ev.h>
+#include <coro.h>
 #include "corona.h"
 
-char *g_execname;
+#define CORO_STACK_SZ               SIGSTKSZ
+
+char *g_execname = NULL;
+char *g_app_path = NULL;
+struct ev_loop *g_loop = NULL;
+void *g_boot_coro_stack = NULL;
+struct coro_context g_boot_coro;
+void *g_loop_coro_stack = NULL;
+struct coro_context g_loop_coro;
 
 static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;
@@ -22,8 +32,22 @@ void InitSyscalls(v8::Handle<v8::Object> target);
 // atexit() handler; tears down all global state
 static void
 ExitCB(void) {
-    g_v8Ctx.Dispose();
-    v8::V8::Dispose();
+    if (!g_v8Ctx.IsEmpty()) {
+        g_v8Ctx.Dispose();
+        v8::V8::Dispose();
+    }
+
+    if (g_loop_coro_stack) {
+        free(g_loop_coro_stack);
+    }
+
+    if (g_boot_coro_stack) {
+        free(g_boot_coro_stack);
+    }
+
+    if (g_loop) {
+        ev_default_destroy();
+    }
 }
 
 // v8::V8::SetFatalErrorHandler() handler
@@ -41,15 +65,26 @@ LogException(FILE *fp, v8::TryCatch &try_catch) {
     assert(try_catch.HasCaught());
 
     v8::Local<v8::Message> msg = try_catch.Message();
-    v8::String::Utf8Value msgStr(msg->Get());
-    v8::String::Utf8Value resourceStr(msg->GetScriptResourceName());
+    if (!msg.IsEmpty()) {
+        v8::String::Utf8Value msgStr(msg->Get());
+        v8::String::Utf8Value resourceStr(msg->GetScriptResourceName());
 
-    fprintf(
-        fp,
-        "%s: %s at %s:%d,%d\n",
-            g_execname, *msgStr, *resourceStr, msg->GetLineNumber(),
-            msg->GetStartColumn()
-    );
+        fprintf(
+            fp,
+            "%s: %s at %s:%d,%d\n",
+                g_execname, *msgStr, *resourceStr, msg->GetLineNumber(),
+                msg->GetStartColumn()
+        );
+    } else {
+        v8::Local<v8::Value> ex = try_catch.Exception();
+        assert(!ex.IsEmpty());
+
+        fprintf(
+            fp,
+            "%s: %s\n",
+                g_execname, *v8::String::AsciiValue(ex)
+        );
+    }
 }
 
 // Load the contents of the given file into a v8::String
@@ -117,8 +152,12 @@ ReadFile(const char *fname) {
 // returned. On error, an empty value is returned.
 static v8::Local<v8::Value>
 ExecFile(const char *fname) {
+    v8::HandleScope scope;
     v8::Local<v8::Value> scriptResult;
     v8::TryCatch try_catch;
+
+    try_catch.SetVerbose(true);
+    try_catch.SetCaptureMessage(true);
 
     v8::Local<v8::String> fileContents = ReadFile(fname);
     if (fileContents.IsEmpty()) {
@@ -176,30 +215,77 @@ GetBootLibPath(char *buf, size_t buf_len) {
     return buf;
 }
 
+static void
+LoopCoro(void *dp) {
+    assert(!"Uh, run the event loop, eh?");
+}
+
+static void
+BootWatcherCoro(void *dp) {
+    struct coro_context *coro = (struct coro_context*) dp;
+
+    {
+        v8::Locker locker;
+        ExecFile(g_app_path);
+    }
+
+    coro_transfer(coro, &g_loop_coro);
+}
+
+static void
+BootWatcherCB(struct ev_loop *el, struct ev_timer *et, int revents) {
+    g_loop_coro_stack = malloc(CORO_STACK_SZ);
+    coro_create(
+        &g_loop_coro,
+        LoopCoro,
+        &g_loop_coro,
+        g_loop_coro_stack,
+        CORO_STACK_SZ
+    );
+
+    g_boot_coro_stack = malloc(CORO_STACK_SZ);
+    coro_create(
+        &g_boot_coro,
+        BootWatcherCoro,
+        &g_boot_coro,
+        g_boot_coro_stack,
+        CORO_STACK_SZ
+    );
+
+    coro_transfer(&g_loop_coro, &g_boot_coro);
+
+    ExecFile(g_app_path);
+}
+
 // TODO: Parse arguments using FlagList::SetFlagsFromCommandLine(); use '--' to
 //       delimit V8 options from corona options
 int
 main(int argc, char *argv[]) {
     char boot_path[MAXPATHLEN];
+    struct ev_timer boot_watcher;
 
-    g_execname = basename(argv[0]);
-
-    v8::V8::Initialize();
-    v8::V8::SetFatalErrorHandler(FatalErrorCB);
-
-    v8::HandleScope scope;
-
-    g_v8Ctx = v8::Context::New();
-    v8::Context::Scope v8CtxScope(g_v8Ctx);
-
+    // Our cleanup handler is smart enough to avoid attempting to clean up
+    // things that have not yet been initialized
     atexit(ExitCB);
 
-    v8::Local<v8::Object> globalObj = g_v8Ctx->Global();
+    g_execname = basename(argv[0]);
+    g_app_path = argv[1];
+
+    // Initialize V8
+    v8::V8::Initialize();
+    v8::V8::SetFatalErrorHandler(FatalErrorCB);
+    g_v8Ctx = v8::Context::New();
+
+    // Set up the global namespace
+    v8::Context::Scope ctx_scope(g_v8Ctx);
+    v8::HandleScope scope;
+
     g_sysObj = v8::Persistent<v8::Object>::New(
-        CreateNamespace(globalObj, v8::String::New("sys"))
+        CreateNamespace(g_v8Ctx->Global(), v8::String::New("sys"))
     );
     InitSyscalls(g_sysObj);
 
+    // Run the bootloader, boot.js
     if (!GetBootLibPath(boot_path, sizeof(boot_path))) {
         fprintf(stderr, "%s: unable to determine boot path\n", g_execname);
         exit(1);
@@ -210,10 +296,12 @@ main(int argc, char *argv[]) {
         exit(1);
     }
 
-    val = ExecFile(argv[1]);
-    if (val.IsEmpty()) {
-        exit(1);
-    }
+    // Fire up the event loop
+    g_loop = ev_default_loop(EVFLAG_AUTO);
+    ev_timer_init(&boot_watcher, BootWatcherCB, 0.01, 0);
+    ev_timer_start(g_loop, &boot_watcher);
 
+    ev_loop(g_loop, 0);
+    
     return 0;
 }
