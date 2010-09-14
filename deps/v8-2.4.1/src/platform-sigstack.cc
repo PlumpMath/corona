@@ -36,6 +36,7 @@
 
 #include <AvailabilityMacros.h>
 
+#include <stdio.h>
 #include <pthread.h>
 #include <semaphore.h>
 #include <signal.h>
@@ -49,6 +50,8 @@
 #include <sys/types.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <setjmp.h>
+#include <signal.h>
 
 #include <errno.h>
 
@@ -57,6 +60,15 @@
 #include "v8.h"
 
 #include "platform.h"
+
+#if 0
+#define PGLOG(x) \
+  do { \
+    printf x; \
+  } while (0)
+#else
+#define PGLOG(x) do {} while(0)
+#endif
 
 // Manually define these here as weak imports, rather than including execinfo.h.
 // This lets us launch on 10.4 which does not have these calls.
@@ -72,9 +84,56 @@ extern "C" {
 namespace v8 {
 namespace internal {
 
-// 0 is never a valid thread id on MacOSX since a ptread_t is
-// a pointer.
-static const pthread_t kNoThread = (pthread_t) 0;
+
+static const int kNoThread = -1;
+static const int kMaxThreadLocals = 16;
+
+
+typedef struct sigthread_s {
+  int st_id;
+  jmp_buf st_jmp;
+  void *st_stack;
+  void *(*st_cb)(void *);
+  void *st_ctx;
+  void *st_locals[kMaxThreadLocals];
+} sigthread_t;
+
+
+static sigthread_t main_thread_ = {
+  0,
+  {
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0,
+  },
+  NULL,
+  NULL,
+  NULL,
+  {
+    NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+    NULL, NULL, NULL, NULL, NULL, NULL
+  }
+};
+static int next_current_thread_id_ = main_thread_.st_id + 1;
+static sigthread_t *current_thread_ = &main_thread_;
+static bool sigthread_trampoline_complete_ = false;
+static int next_local_ = 0;
+
+static inline void
+sigthread_init(sigthread_t *st) {
+  bzero(st, sizeof(*st));
+  st->st_id = kNoThread;
+}
+
+
+static void
+sigthread_trampoline(int sig) {
+  if (setjmp(current_thread_->st_jmp) == 0) {
+    sigthread_trampoline_complete_ = true;
+    return;
+  }
+
+  current_thread_->st_cb(current_thread_->st_ctx);
+}
 
 
 double ceiling(double x) {
@@ -367,11 +426,12 @@ class ThreadHandle::PlatformData : public Malloced {
 
   void Initialize(ThreadHandle::Kind kind) {
     switch (kind) {
-      case ThreadHandle::SELF: thread_ = pthread_self(); break;
-      case ThreadHandle::INVALID: thread_ = kNoThread; break;
+      case ThreadHandle::SELF: this->thread_ = *current_thread_; break;
+      case ThreadHandle::INVALID: sigthread_init(&this->thread_); break;
     }
   }
-  pthread_t thread_;  // Thread handle for pthread.
+
+  sigthread_t thread_;
 };
 
 
@@ -392,12 +452,12 @@ ThreadHandle::~ThreadHandle() {
 
 
 bool ThreadHandle::IsSelf() const {
-  return pthread_equal(data_->thread_, pthread_self());
+  return (data_->thread_.st_id == current_thread_->st_id);
 }
 
 
 bool ThreadHandle::IsValid() const {
-  return data_->thread_ != kNoThread;
+  return (data_->thread_.st_id != kNoThread);
 }
 
 
@@ -411,57 +471,96 @@ Thread::~Thread() {
 
 static void* ThreadEntry(void* arg) {
   Thread* thread = reinterpret_cast<Thread*>(arg);
-  // This is also initialized by the first argument to pthread_create() but we
-  // don't know which thread will run first (the original thread or the new
-  // one) so we initialize it here too.
-  thread->thread_handle_data()->thread_ = pthread_self();
-  ASSERT(thread->IsValid());
   thread->Run();
   return NULL;
 }
 
 
 void Thread::Start() {
-  pthread_create(&thread_handle_data()->thread_, NULL, ThreadEntry, this);
+  struct sigaction sa;
+  stack_t stk;
+
+  sa.sa_handler = sigthread_trampoline;
+  sigemptyset(&sa.sa_mask);
+  sa.sa_flags = SA_ONSTACK;
+
+  if (sigaction(SIGUSR2, &sa, NULL)) {
+    perror("sigaction");
+    exit(1);
+  }
+
+  stk.ss_sp = malloc(SIGSTKSZ);
+  stk.ss_size = SIGSTKSZ;
+  stk.ss_flags = 0;
+
+  if (sigaltstack(&stk, NULL)) {
+    perror("sigaltstack");
+    exit(1);
+  }
+
+  sigthread_trampoline_complete_ = false;
+  current_thread_ = &((ThreadHandle::PlatformData*) thread_handle_data())->thread_;
+  current_thread_->st_id = next_current_thread_id_++;
+  current_thread_->st_stack = stk.ss_sp;
+  current_thread_->st_cb = ThreadEntry;
+  current_thread_->st_ctx = this;
+
+  kill(getpid(), SIGUSR2);
+  while (!sigthread_trampoline_complete_)
+    ;
+
+  longjmp(current_thread_->st_jmp, 1);
 }
 
 
 void Thread::Join() {
-  pthread_join(thread_handle_data()->thread_, NULL);
+  ASSERT(!"Thread::Join() not supported");
 }
 
 
 Thread::LocalStorageKey Thread::CreateThreadLocalKey() {
-  pthread_key_t key;
-  int result = pthread_key_create(&key, NULL);
-  USE(result);
-  ASSERT(result == 0);
-  return static_cast<LocalStorageKey>(key);
+  ASSERT(next_local_ < kMaxThreadLocals);
+  PGLOG(("CreateThreadLocalKey(%d) = %d\n",
+    current_thread_->st_id, next_local_
+  ));
+  return static_cast<LocalStorageKey>(next_local_++);
 }
 
 
 void Thread::DeleteThreadLocalKey(LocalStorageKey key) {
-  pthread_key_t pthread_key = static_cast<pthread_key_t>(key);
-  int result = pthread_key_delete(pthread_key);
-  USE(result);
-  ASSERT(result == 0);
+  PGLOG((
+    "Ignoring delete request for local storage key %d\n",
+      static_cast<int>(key)
+  ));
 }
 
 
 void* Thread::GetThreadLocal(LocalStorageKey key) {
-  pthread_key_t pthread_key = static_cast<pthread_key_t>(key);
-  return pthread_getspecific(pthread_key);
+  int k = static_cast<int>(key);
+  ASSERT(k >= 0);
+  ASSERT(k < kMaxThreadLocals);
+  PGLOG((
+    "GetThreadLocal(%d, %d) = %p\n",
+      current_thread_->st_id, k, current_thread_->st_locals[k]
+  ));
+  return current_thread_->st_locals[k];
 }
 
 
 void Thread::SetThreadLocal(LocalStorageKey key, void* value) {
-  pthread_key_t pthread_key = static_cast<pthread_key_t>(key);
-  pthread_setspecific(pthread_key, value);
+  int k = static_cast<int>(key);
+  ASSERT(k >= 0);
+  ASSERT(k < kMaxThreadLocals);
+  PGLOG((
+    "SetThreadLocal(%d, %d, %p)\n",
+      current_thread_->st_id, k, value
+  ));
+  current_thread_->st_locals[k] = value;
 }
 
 
 void Thread::YieldCPU() {
-  sched_yield();
+  ASSERT(!"Thread::YieldCPU() not supported");
 }
 
 
