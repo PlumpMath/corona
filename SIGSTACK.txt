@@ -1,0 +1,16 @@
+Some TODOs/bugs:
+
+    - Need to get semaphores and mutexes working, as the some non-primary codepaths need this:
+        - Enabling the FLAG_preallocate_message_memory commandline flag
+        - Profiling
+        - Logging
+        - Debugging
+
+    - Need to set up thread state in Thread::Thread() (creation of stack, setjmp(), etc)
+
+    - Need to create Thread implementation that uses a top-level run loop,
+      looking for runnable Thread instances and resuming them. This can be
+      outside of the V8 source.
+
+    - Implement corona purely in terms of v8::internal::Thread instances; this
+      way we can switch between a backends (more) easily.
