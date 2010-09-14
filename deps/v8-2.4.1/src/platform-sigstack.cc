@@ -560,32 +560,26 @@ void Thread::SetThreadLocal(LocalStorageKey key, void* value) {
 
 
 void Thread::YieldCPU() {
-  ASSERT(!"Thread::YieldCPU() not supported");
+  PGLOG("Thread::YieldCPU() not supported; ignoring call");
 }
 
 
 class MacOSMutex : public Mutex {
  public:
 
-  MacOSMutex() {
-    pthread_mutexattr_t attr;
-    pthread_mutexattr_init(&attr);
-    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&mutex_, &attr);
-  }
+  MacOSMutex() { PGLOG(("MacOSMutex::MacOSMutex()")); }
 
-  ~MacOSMutex() { pthread_mutex_destroy(&mutex_); }
+  ~MacOSMutex() { PGLOG(("MacOSMutex::~MacOSMutex()")); }
 
-  int Lock() { return pthread_mutex_lock(&mutex_); }
+  int Lock() { PGLOG(("MacOSMutex::Lock()")); return 0; }
 
-  int Unlock() { return pthread_mutex_unlock(&mutex_); }
-
- private:
-  pthread_mutex_t mutex_;
+  int Unlock() { PGLOG(("MacOSMutex::Unlock()")); return 0; }
 };
 
 
 Mutex* OS::CreateMutex() {
+  PGLOG(("OS::CreateMutex()"));
+
   return new MacOSMutex();
 }
 
@@ -593,21 +587,16 @@ Mutex* OS::CreateMutex() {
 class MacOSSemaphore : public Semaphore {
  public:
   explicit MacOSSemaphore(int count) {
-    semaphore_create(mach_task_self(), &semaphore_, SYNC_POLICY_FIFO, count);
+    PGLOG(("MacOSSemaphore::MacOSSemaphore(%d)", count));
   }
 
-  ~MacOSSemaphore() {
-    semaphore_destroy(mach_task_self(), semaphore_);
-  }
+  ~MacOSSemaphore() { PGLOG(("MacOSSemaphore::~MacOSSemaphore()")); }
 
-  // The MacOS mach semaphore documentation claims it does not have spurious
-  // wakeups, the way pthreads semaphores do.  So the code from the linux
-  // platform is not needed here.
-  void Wait() { semaphore_wait(semaphore_); }
+  void Wait() { PGLOG(("MacOSSemaphore::Wait()")); }
 
   bool Wait(int timeout);
 
-  void Signal() { semaphore_signal(semaphore_); }
+  void Signal() { PGLOG(("MacOSSemaphore::Signal()")); }
 
  private:
   semaphore_t semaphore_;
@@ -615,14 +604,13 @@ class MacOSSemaphore : public Semaphore {
 
 
 bool MacOSSemaphore::Wait(int timeout) {
-  mach_timespec_t ts;
-  ts.tv_sec = timeout / 1000000;
-  ts.tv_nsec = (timeout % 1000000) * 1000;
-  return semaphore_timedwait(semaphore_, ts) != KERN_OPERATION_TIMED_OUT;
+  PGLOG(("MacOSSemaphore::Wait(%d)", timeout));
+  return true;
 }
 
 
 Semaphore* OS::CreateSemaphore(int count) {
+  PGLOG(("OS::CreateSemaphore(%d)", count));
   return new MacOSSemaphore(count);
 }
 
