@@ -85,48 +85,17 @@ namespace v8 {
 namespace internal {
 
 
-static const int kNoThread = -1;
-static const int kMaxThreadLocals = 16;
+class MainThread : public Thread {
+  public:
+    void Run() {
+      UNREACHABLE();
+    }
+} main_th;
 
+// Export some scheduler data structures to whoever wants to look at them
+Thread *main_thread = &main_th;
+Thread *current_thread = main_thread;
 
-typedef struct sigthread_s {
-  int st_id;
-  jmp_buf st_jmp;
-  void *st_stack;
-  Thread *st_this;
-  bool st_tramp_done;
-  void *st_locals[kMaxThreadLocals];
-} sigthread_t;
-
-
-static sigthread_t sigthread_empty(void);
-
-
-// N.B. The main_thread_ variable only exists so that its sigthread_empty()
-//      static initializer causes it to get run in the context of the main
-//      thread.  We never use it again.
-static sigthread_t main_thread_ = sigthread_empty();
-static sigthread_t *current_thread_ = &main_thread_;
-static int next_current_thread_id_ = 0;
-static int next_local_ = 0;
-
-
-static inline void
-sigthread_init(sigthread_t *st) {
-  bzero(st, sizeof(*st));
-  st->st_id = kNoThread;
-}
-
-
-static inline sigthread_t
-sigthread_empty(void) {
-  sigthread_t st;
-  sigthread_init(&st);
-
-  st.st_id = next_current_thread_id_++;
-
-  return st;
-}
 
 
 double ceiling(double x) {
@@ -418,28 +387,69 @@ class ThreadHandle::PlatformData : public Malloced {
   }
 
   ~PlatformData() {
-    if (thread_.st_stack) {
-        free(thread_.st_stack);
+    if (stack_) {
+        free(stack_);
     }
   }
 
   void Initialize(ThreadHandle::Kind kind) {
+    ThreadHandle::PlatformData *current_pd = NULL;
+
+    id_ = -1;
+    memset(&jmp_, 0, sizeof(jmp_));
+    stack_ = NULL;
+    tramp_done_ = false;
+    valid_ = false;
+    memset(&locals_, 0, sizeof(locals_));
+
     switch (kind) {
       case ThreadHandle::SELF:
-        thread_ = *current_thread_;
+        current_pd = current_thread->thread_handle_data();
+
+        ASSERT(next_id > 0);
+        ASSERT(current_pd->id_ >= 0);
+
+        id_ = current_pd->id_;
+        memcpy(&jmp_, current_pd->jmp_, sizeof(jmp_));
+        stack_ = current_pd->stack_;
+        tramp_done_ = current_pd->tramp_done_;
+        valid_ = current_pd->valid_;
+        memcpy(&locals_, &current_pd->locals_, sizeof(locals_));
         break;
 
       case ThreadHandle::INVALID:
-        sigthread_init(&thread_);
-        thread_.st_id = next_current_thread_id_++;
-        thread_.st_stack = malloc(SIGSTKSZ);
+        id_ = next_id++;
+        stack_ = malloc(kStackSize);
         break;
+
+      default:
+        UNREACHABLE();
     }
   }
 
-  sigthread_t thread_;
+  static int AllocateLocalId() {
+    ASSERT(next_local < kMaxThreadLocals);
+    return next_local++;
+  }
+
+  static const int kMaxThreadLocals = 16;
+  static const size_t kStackSize = SIGSTKSZ;
+
+  int id_;
+  jmp_buf jmp_;
+  void *stack_;
+  bool tramp_done_;
+  bool valid_;
+  void *locals_[kMaxThreadLocals];
+
+  private:
+    static int next_id;
+    static int next_local;
 };
 
+
+int ThreadHandle::PlatformData::next_id = 0;
+int ThreadHandle::PlatformData::next_local = 0;
 
 
 ThreadHandle::ThreadHandle(Kind kind) {
@@ -458,44 +468,44 @@ ThreadHandle::~ThreadHandle() {
 
 
 bool ThreadHandle::IsSelf() const {
-  return (data_->thread_.st_id == current_thread_->st_id);
+  return (data_->id_ == current_thread->thread_handle_data()->id_);
 }
 
 
 bool ThreadHandle::IsValid() const {
-  ASSERT(data_->thread_.st_this == this || !data_->thread_.st_this);
-  return (data_->thread_.st_this == this);
+  return data_->valid_;
 }
 
 
 static void
 Trampoline(int sig) {
-  if (setjmp(current_thread_->st_jmp) == 0) {
-    ASSERT(!current_thread_->st_tramp_done);
-    ASSERT(!current_thread_->st_this);
+  ThreadHandle::PlatformData *pd = current_thread->thread_handle_data();
 
-    current_thread_->st_tramp_done = true;
+  if (setjmp(pd->jmp_) == 0) {
+    ASSERT(!pd->tramp_done_);
+    ASSERT(!pd->valid_);
+
+    pd->tramp_done_ = true;
   } else {
-    ASSERT(current_thread_->st_this);
-    ASSERT(current_thread_->st_this->IsValid());
+    ASSERT(pd->valid_);
 
-    current_thread_->st_this->Run();
+    current_thread->Run();
 
     // XXX: Returning from here will cause an attempt to traverse up the stack
     //      to a non-existant stack frame at address 0x0. Add scheduler hook
-    //      here, or do so in Run() implementation.
+    //      in Run() implementation.
+    UNREACHABLE();
   }
 }
 
 
 Thread::Thread() : ThreadHandle(ThreadHandle::INVALID) {
+  ThreadHandle::PlatformData *pd = thread_handle_data();
+  Thread *prev_thread = prev_thread;
   struct sigaction sa;
   stack_t stk;
-  sigthread_t *stp =
-    &((ThreadHandle::PlatformData*) thread_handle_data())->thread_;
-  sigthread_t *old_current_thread;
 
-  ASSERT(!stp->st_tramp_done);
+  ASSERT(!pd->tramp_done_);
 
   sa.sa_handler = Trampoline;
   sigemptyset(&sa.sa_mask);
@@ -506,8 +516,8 @@ Thread::Thread() : ThreadHandle(ThreadHandle::INVALID) {
     exit(1);
   }
 
-  stk.ss_sp = stp->st_stack;
-  stk.ss_size = SIGSTKSZ;
+  stk.ss_sp = pd->stack_;
+  stk.ss_size = ThreadHandle::PlatformData::kStackSize;
   stk.ss_flags = 0;
 
   if (sigaltstack(&stk, NULL)) {
@@ -515,14 +525,14 @@ Thread::Thread() : ThreadHandle(ThreadHandle::INVALID) {
     exit(1);
   }
 
-  old_current_thread = current_thread_;
-  current_thread_ = stp;
+  prev_thread = current_thread;
+  current_thread = this;
 
   kill(getpid(), SIGUSR2);
-  while (!stp->st_tramp_done)
+  while (!pd->tramp_done_)
     ;
 
-  current_thread_ = old_current_thread;
+  current_thread = prev_thread;
 }
 
 
@@ -531,66 +541,76 @@ Thread::~Thread() {
 
 
 void Thread::Start() {
-  sigthread_t *stp =
-    &((ThreadHandle::PlatformData*) thread_handle_data())->thread_;
+#ifdef DEBUG
+  Thread *prev_thread = current_thread;
+#endif
 
-  ASSERT(stp->st_tramp_done);
+  ThreadHandle::PlatformData *current_pd = current_thread->thread_handle_data();
+  ThreadHandle::PlatformData *pd = thread_handle_data();
 
-  stp->st_this = this;
-  current_thread_ = stp;
+  ASSERT(pd->tramp_done_);
+  ASSERT(current_thread != this);
 
-  longjmp(current_thread_->st_jmp, 1);
+  pd->valid_ = true;
+
+  if (setjmp(current_pd->jmp_) == 0) {
+    current_thread = this;
+    longjmp(pd->jmp_, 1);
+  } else {
+    // When setjmp() returns, current_thread should be whatever
+    // thread invoked this function
+    ASSERT(current_thread != this);
+    ASSERT(current_thread == prev_thread);
+  }
 }
 
 
 void Thread::Join() {
-  ASSERT(!"Thread::Join() not supported");
+  UNIMPLEMENTED();
 }
 
 
 Thread::LocalStorageKey Thread::CreateThreadLocalKey() {
-  ASSERT(next_local_ < kMaxThreadLocals);
-  PGLOG(("CreateThreadLocalKey(%d) = %d\n",
-    current_thread_->st_id, next_local_
-  ));
-  return static_cast<LocalStorageKey>(next_local_++);
+  int k = ThreadHandle::PlatformData::AllocateLocalId();
+
+  PGLOG(("CreateThreadLocalKey(%d) = %d\n", pd->id_, k));
+
+  return static_cast<LocalStorageKey>(k);
 }
 
 
 void Thread::DeleteThreadLocalKey(LocalStorageKey key) {
-  PGLOG((
-    "Ignoring delete request for local storage key %d\n",
-      static_cast<int>(key)
-  ));
+  UNIMPLEMENTED();
 }
 
 
 void* Thread::GetThreadLocal(LocalStorageKey key) {
+  ThreadHandle::PlatformData *pd = current_thread->thread_handle_data();
   int k = static_cast<int>(key);
+
   ASSERT(k >= 0);
-  ASSERT(k < kMaxThreadLocals);
-  PGLOG((
-    "GetThreadLocal(%d, %d) = %p\n",
-      current_thread_->st_id, k, current_thread_->st_locals[k]
-  ));
-  return current_thread_->st_locals[k];
+  ASSERT(k < ThreadHandle::PlatformData::kMaxThreadLocals);
+
+  PGLOG(("GetThreadLocal(%d, %d) = %p\n", pd->id_, k, pd->locals_[k]));
+
+  return pd->locals_[k];
 }
 
 
 void Thread::SetThreadLocal(LocalStorageKey key, void* value) {
+  ThreadHandle::PlatformData *pd = current_thread->thread_handle_data();
   int k = static_cast<int>(key);
+
   ASSERT(k >= 0);
-  ASSERT(k < kMaxThreadLocals);
-  PGLOG((
-    "SetThreadLocal(%d, %d, %p)\n",
-      current_thread_->st_id, k, value
-  ));
-  current_thread_->st_locals[k] = value;
+  ASSERT(k < ThreadHandle::PlatformData::kMaxThreadLocals);
+
+  PGLOG(("SetThreadLocal(%d, %d, %p)\n", pd->id_, k, value));
+  pd->locals_[k] = value;
 }
 
 
 void Thread::YieldCPU() {
-  PGLOG(("Thread::YieldCPU() not supported; ignoring call\n"));
+  UNIMPLEMENTED();
 }
 
 
@@ -780,3 +800,4 @@ void Sampler::Stop() {
 #endif  // ENABLE_LOGGING_AND_PROFILING
 
 } }  // namespace v8::internal
+// vim:ts=2 sw=2
