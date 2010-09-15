@@ -2,7 +2,7 @@ LIBEV_VERS = 3.9
 V8_VERS = 2.4.1
 
 CFLAGS = -g -Wall -Werror 
-CFLAGS += -DCORO_SJLJ
+CFLAGS += -DCORO_SJLJ -DDEBUG
 CFLAGS += -Ideps/build/include
 CXXFLAGS = $(CFLAGS) -fno-rtti -fno-exceptions
 LDFLAGS = -Ldeps/build/lib
