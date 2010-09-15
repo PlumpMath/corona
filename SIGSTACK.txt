@@ -6,8 +6,6 @@ Some TODOs/bugs:
         - Logging
         - Debugging
 
-    - Need to set up thread state in Thread::Thread() (creation of stack, setjmp(), etc)
-
     - Need to create Thread implementation that uses a top-level run loop,
       looking for runnable Thread instances and resuming them. This can be
       outside of the V8 source.

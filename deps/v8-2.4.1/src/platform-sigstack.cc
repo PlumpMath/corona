@@ -93,8 +93,8 @@ typedef struct sigthread_s {
   int st_id;
   jmp_buf st_jmp;
   void *st_stack;
-  void *(*st_cb)(void *);
-  void *st_ctx;
+  Thread *st_this;
+  bool st_tramp_done;
   void *st_locals[kMaxThreadLocals];
 } sigthread_t;
 
@@ -102,10 +102,12 @@ typedef struct sigthread_s {
 static sigthread_t sigthread_empty(void);
 
 
+// N.B. The main_thread_ variable only exists so that its sigthread_empty()
+//      static initializer causes it to get run in the context of the main
+//      thread.  We never use it again.
 static sigthread_t main_thread_ = sigthread_empty();
-static int next_current_thread_id_ = main_thread_.st_id + 1;
 static sigthread_t *current_thread_ = &main_thread_;
-static bool sigthread_trampoline_complete_ = false;
+static int next_current_thread_id_ = 0;
 static int next_local_ = 0;
 
 
@@ -121,18 +123,9 @@ sigthread_empty(void) {
   sigthread_t st;
   sigthread_init(&st);
 
+  st.st_id = next_current_thread_id_++;
+
   return st;
-}
-
-
-static void
-sigthread_trampoline(int sig) {
-  if (setjmp(current_thread_->st_jmp) == 0) {
-    sigthread_trampoline_complete_ = true;
-    return;
-  }
-
-  current_thread_->st_cb(current_thread_->st_ctx);
 }
 
 
@@ -424,10 +417,23 @@ class ThreadHandle::PlatformData : public Malloced {
     Initialize(kind);
   }
 
+  ~PlatformData() {
+    if (thread_.st_stack) {
+        free(thread_.st_stack);
+    }
+  }
+
   void Initialize(ThreadHandle::Kind kind) {
     switch (kind) {
-      case ThreadHandle::SELF: this->thread_ = *current_thread_; break;
-      case ThreadHandle::INVALID: sigthread_init(&this->thread_); break;
+      case ThreadHandle::SELF:
+        thread_ = *current_thread_;
+        break;
+
+      case ThreadHandle::INVALID:
+        sigthread_init(&thread_);
+        thread_.st_id = next_current_thread_id_++;
+        thread_.st_stack = malloc(SIGSTKSZ);
+        break;
     }
   }
 
@@ -457,30 +463,41 @@ bool ThreadHandle::IsSelf() const {
 
 
 bool ThreadHandle::IsValid() const {
-  return (data_->thread_.st_id != kNoThread);
+  ASSERT(data_->thread_.st_this == this || !data_->thread_.st_this);
+  return (data_->thread_.st_this == this);
+}
+
+
+static void
+Trampoline(int sig) {
+  if (setjmp(current_thread_->st_jmp) == 0) {
+    ASSERT(!current_thread_->st_tramp_done);
+    ASSERT(!current_thread_->st_this);
+
+    current_thread_->st_tramp_done = true;
+  } else {
+    ASSERT(current_thread_->st_this);
+    ASSERT(current_thread_->st_this->IsValid());
+
+    current_thread_->st_this->Run();
+
+    // XXX: Returning from here will cause an attempt to traverse up the stack
+    //      to a non-existant stack frame at address 0x0. Add scheduler hook
+    //      here, or do so in Run() implementation.
+  }
 }
 
 
 Thread::Thread() : ThreadHandle(ThreadHandle::INVALID) {
-}
-
-
-Thread::~Thread() {
-}
-
-
-static void* ThreadEntry(void* arg) {
-  Thread* thread = reinterpret_cast<Thread*>(arg);
-  thread->Run();
-  return NULL;
-}
-
-
-void Thread::Start() {
   struct sigaction sa;
   stack_t stk;
+  sigthread_t *stp =
+    &((ThreadHandle::PlatformData*) thread_handle_data())->thread_;
+  sigthread_t *old_current_thread;
 
-  sa.sa_handler = sigthread_trampoline;
+  ASSERT(!stp->st_tramp_done);
+
+  sa.sa_handler = Trampoline;
   sigemptyset(&sa.sa_mask);
   sa.sa_flags = SA_ONSTACK;
 
@@ -489,7 +506,7 @@ void Thread::Start() {
     exit(1);
   }
 
-  stk.ss_sp = malloc(SIGSTKSZ);
+  stk.ss_sp = stp->st_stack;
   stk.ss_size = SIGSTKSZ;
   stk.ss_flags = 0;
 
@@ -498,16 +515,29 @@ void Thread::Start() {
     exit(1);
   }
 
-  sigthread_trampoline_complete_ = false;
-  current_thread_ = &((ThreadHandle::PlatformData*) thread_handle_data())->thread_;
-  current_thread_->st_id = next_current_thread_id_++;
-  current_thread_->st_stack = stk.ss_sp;
-  current_thread_->st_cb = ThreadEntry;
-  current_thread_->st_ctx = this;
+  old_current_thread = current_thread_;
+  current_thread_ = stp;
 
   kill(getpid(), SIGUSR2);
-  while (!sigthread_trampoline_complete_)
+  while (!stp->st_tramp_done)
     ;
+
+  current_thread_ = old_current_thread;
+}
+
+
+Thread::~Thread() {
+}
+
+
+void Thread::Start() {
+  sigthread_t *stp =
+    &((ThreadHandle::PlatformData*) thread_handle_data())->thread_;
+
+  ASSERT(stp->st_tramp_done);
+
+  stp->st_this = this;
+  current_thread_ = stp;
 
   longjmp(current_thread_->st_jmp, 1);
 }
@@ -560,25 +590,25 @@ void Thread::SetThreadLocal(LocalStorageKey key, void* value) {
 
 
 void Thread::YieldCPU() {
-  PGLOG("Thread::YieldCPU() not supported; ignoring call");
+  PGLOG(("Thread::YieldCPU() not supported; ignoring call\n"));
 }
 
 
 class MacOSMutex : public Mutex {
  public:
 
-  MacOSMutex() { PGLOG(("MacOSMutex::MacOSMutex()")); }
+  MacOSMutex() { PGLOG(("MacOSMutex::MacOSMutex()\n")); }
 
-  ~MacOSMutex() { PGLOG(("MacOSMutex::~MacOSMutex()")); }
+  ~MacOSMutex() { PGLOG(("MacOSMutex::~MacOSMutex()\n")); }
 
-  int Lock() { PGLOG(("MacOSMutex::Lock()")); return 0; }
+  int Lock() { PGLOG(("MacOSMutex::Lock()\n")); return 0; }
 
-  int Unlock() { PGLOG(("MacOSMutex::Unlock()")); return 0; }
+  int Unlock() { PGLOG(("MacOSMutex::Unlock()\n")); return 0; }
 };
 
 
 Mutex* OS::CreateMutex() {
-  PGLOG(("OS::CreateMutex()"));
+  PGLOG(("OS::CreateMutex()\n"));
 
   return new MacOSMutex();
 }
@@ -587,16 +617,16 @@ Mutex* OS::CreateMutex() {
 class MacOSSemaphore : public Semaphore {
  public:
   explicit MacOSSemaphore(int count) {
-    PGLOG(("MacOSSemaphore::MacOSSemaphore(%d)", count));
+    PGLOG(("MacOSSemaphore::MacOSSemaphore(%d)\n", count));
   }
 
-  ~MacOSSemaphore() { PGLOG(("MacOSSemaphore::~MacOSSemaphore()")); }
+  ~MacOSSemaphore() { PGLOG(("MacOSSemaphore::~MacOSSemaphore()\n")); }
 
-  void Wait() { PGLOG(("MacOSSemaphore::Wait()")); }
+  void Wait() { PGLOG(("MacOSSemaphore::Wait()\n")); }
 
   bool Wait(int timeout);
 
-  void Signal() { PGLOG(("MacOSSemaphore::Signal()")); }
+  void Signal() { PGLOG(("MacOSSemaphore::Signal()\n")); }
 
  private:
   semaphore_t semaphore_;
@@ -604,13 +634,13 @@ class MacOSSemaphore : public Semaphore {
 
 
 bool MacOSSemaphore::Wait(int timeout) {
-  PGLOG(("MacOSSemaphore::Wait(%d)", timeout));
+  PGLOG(("MacOSSemaphore::Wait(%d)\n", timeout));
   return true;
 }
 
 
 Semaphore* OS::CreateSemaphore(int count) {
-  PGLOG(("OS::CreateSemaphore(%d)", count));
+  PGLOG(("OS::CreateSemaphore(%d)\n", count));
   return new MacOSSemaphore(count);
 }
 
