@@ -10,6 +10,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <string>
+#include <list>
 #include <v8.h>
 #include <v8/globals.h>
 #include <v8/checks.h>
@@ -21,20 +22,52 @@
 #include <coro.h>
 #include "corona.h"
 
+class CoronaThread;
+
+namespace v8 {
+    namespace internal {
+        extern v8::internal::Thread *main_thread;
+        extern v8::internal::Thread *current_thread;
+    }
+}
+
+extern void InitSyscalls(v8::Handle<v8::Object> target);
+static v8::Local<v8::Value> ExecFile(const char *);
+
 char *g_execname = NULL;
 
 static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;
 
-void InitSyscalls(v8::Handle<v8::Object> target);
-static v8::Local<v8::Value> ExecFile(const char *);
+static CoronaThread *g_currentThread = NULL;
+static std::list<CoronaThread*> g_runnableThreads;
+static std::list<CoronaThread*> g_blockedThreads;
 
-class AppThread : public v8::internal::Thread {
+class CoronaThread : public v8::internal::Thread {
+    public:
+        CoronaThread() {
+        }
+
+        virtual void Run() {
+            if (g_runnableThreads.empty()) {
+                v8::internal::main_thread->Start();
+                UNREACHABLE();
+            }
+
+            UNREACHABLE();
+        }
+};
+
+class AppThread : public CoronaThread {
     public:
         AppThread(const std::string &str) : path_(str) {
         }
 
         void Run() {
+            // We run first; there should be nobody else
+            ASSERT(g_currentThread == NULL);
+            g_currentThread = this;
+
             {
                 v8::Locker lock;
                 v8::Context::Scope ctx_scope(g_v8Ctx);
@@ -44,8 +77,7 @@ class AppThread : public v8::internal::Thread {
                 ASSERT(!val.IsEmpty());
             }
 
-            // XXX: Schedule me!
-            UNREACHABLE();
+            CoronaThread::Run();
         }
 
     private:
