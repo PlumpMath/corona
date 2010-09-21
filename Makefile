@@ -10,7 +10,7 @@ LDFLAGS += -lcoro -lev -lv8_g
 
 .PHONY: all deps ctags cscope
 
-all: deps build/benchd build/bench build/corona build/sj
+all: deps build/benchd build/bench build/corona
 
 build/benchd: build/obj/benchd.o
 	$(CC) $(LDFLAGS) -o $@ $^
@@ -21,10 +21,7 @@ build/bench: build/obj/bench.o
 build/corona: build/obj/corona.o build/obj/syscalls.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
-build/sj: build/obj/sj.o
-	$(CXX) $(LDFLAGS) -o $@ $^
-
-build/obj/%.o: src/%.c build/obj deps
+build/obj/%.o: tools/%.c build/obj deps
 	$(CC) $(CFLAGS) -o $@ -c $<
 
 build/obj/%.o: src/%.cc build/obj deps

@@ -14,15 +14,9 @@
 #include <ev.h>
 #include <coro.h>
 #include "corona.h"
+#include "v8-util.h"
 
 class CoronaThread;
-
-namespace v8 {
-    namespace internal {
-        extern v8::internal::Thread *main_thread;
-        extern v8::internal::Thread *current_thread;
-    }
-}
 
 extern void InitSyscalls(v8::Handle<v8::Object> target);
 static v8::Local<v8::Value> ExecFile(const char *);
@@ -35,21 +29,6 @@ static v8::Persistent<v8::Object> g_sysObj;
 static CoronaThread *g_currentThread = NULL;
 static std::list<CoronaThread*> g_runnableThreads;
 static std::list<CoronaThread*> g_blockedThreads;
-
-class CoronaThread : public v8::internal::Thread {
-    public:
-        CoronaThread() {
-        }
-
-        virtual void Run() {
-            if (g_runnableThreads.empty()) {
-                v8::internal::main_thread->Start();
-                UNREACHABLE();
-            }
-
-            UNREACHABLE();
-        }
-};
 
 class AppThread : public CoronaThread {
     public:
@@ -76,6 +55,18 @@ class AppThread : public CoronaThread {
     private:
         const std::string path_;
 };
+
+CoronaThread::CoronaThread() {
+}
+
+void CoronaThread::Run() {
+    if (g_runnableThreads.empty()) {
+        v8::internal::main_thread->Start();
+        UNREACHABLE();
+    }
+
+    UNREACHABLE();
+}
 
 // atexit() handler; tears down all global state
 static void
