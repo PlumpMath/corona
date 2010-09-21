@@ -11,13 +11,6 @@
 #include <errno.h>
 #include <string>
 #include <list>
-#include <v8.h>
-#include <v8/globals.h>
-#include <v8/checks.h>
-#include <v8/allocation.h>
-#include <v8/utils.h>
-#include <v8/list.h>
-#include <v8/platform.h>
 #include <ev.h>
 #include <coro.h>
 #include "corona.h"

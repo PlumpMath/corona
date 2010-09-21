@@ -4,6 +4,12 @@
 #include <string.h>
 #include <stdarg.h>
 #include <v8.h>
+#include <v8/globals.h>
+#include <v8/checks.h>
+#include <v8/allocation.h>
+#include <v8/utils.h>
+#include <v8/list.h>
+#include <v8/platform.h>
 
 // Helper macros for argument parsing
 

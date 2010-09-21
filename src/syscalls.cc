@@ -8,7 +8,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <string.h>
-#include <v8.h>
 #include "corona.h"
 
 // Set a constant numerical value on the given target
@@ -415,6 +414,30 @@ Fcntl(const v8::Arguments &args) {
     return scope.Close(v8::Integer::New(err));
 }
 
+
+// accept(2)
+//
+// <addr> = accept(<fd>)
+static v8::Handle<v8::Value>
+Accept(const v8::Arguments &args) {
+    v8::HandleScope scope;
+
+    int fd = -1;
+    int newfd = -1;
+    struct sockaddr_in addr_in;
+    socklen_t addr_len = sizeof(addr_in);
+
+    V8_ARG_VALUE_FD(fd, args, 0);
+
+    newfd = accept(fd, (struct sockaddr*) &addr_in, &addr_len);
+    if (newfd > 0) {
+        return scope.Close(v8::Integer::New(newfd));
+    }
+
+    UNREACHABLE();
+    return scope.Close(v8::Undefined());
+}
+
 // Set system call functions on the given target object
 void InitSyscalls(const v8::Handle<v8::Object> target) {
     InitErrno(target);
@@ -444,6 +467,11 @@ void InitSyscalls(const v8::Handle<v8::Object> target) {
     target->Set(
         v8::String::NewSymbol("fcntl"),
         v8::FunctionTemplate::New(Fcntl)->GetFunction(),
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
+    );
+    target->Set(
+        v8::String::NewSymbol("accept"),
+        v8::FunctionTemplate::New(Accept)->GetFunction(),
         (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
     );
 }
