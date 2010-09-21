@@ -17,6 +17,7 @@
 #include "v8-util.h"
 
 char *g_execname = NULL;
+struct ev_loop *g_loop = NULL;
 
 static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;
@@ -30,40 +31,67 @@ static v8::Local<v8::Value> ExecFile(const char *);
 
 class AppThread : public CoronaThread {
     public:
-        AppThread(const std::string &str) : path_(str) {
-        }
-
-        void Run() {
-            // We run first; there should be nobody else
-            ASSERT(g_currentThread == NULL);
-            g_currentThread = this;
-
-            {
-                v8::Locker lock;
-                v8::Context::Scope ctx_scope(g_v8Ctx);
-                v8::HandleScope scope;
-
-                v8::Handle<v8::Value> val = ExecFile(path_.c_str());
-                ASSERT(!val.IsEmpty());
-            }
-
-            CoronaThread::Run();
-        }
+        AppThread(struct ev_loop *el, const std::string &str);
+        void Run(void);
 
     private:
         const std::string path_;
+
+        static void ReadyCB(struct ev_loop *el, ev_prepare *evp, int revents);
 };
 
-CoronaThread::CoronaThread() {
+CoronaThread::CoronaThread(void) {
+    this->ct_ev_.ct_self_ = this;
+    this->ct_ev_type_ = 0;
 }
 
-void CoronaThread::Run() {
+void
+CoronaThread::Run(void) {
     if (g_runnableThreads.empty()) {
         v8::internal::main_thread->Start();
         UNREACHABLE();
     }
 
-    UNREACHABLE();
+    UNIMPLEMENTED();
+}
+
+AppThread::AppThread(struct ev_loop *el, const std::string &str) : path_(str) {
+    ASSERT(el != NULL);
+    ASSERT(this->ct_ev_.ct_self_ == this);
+    ASSERT(this->ct_ev_type_ == 0);
+
+    this->ct_ev_type_ = EV_PREPARE;
+    ev_prepare_init(&this->ct_ev_.ct_u_.ct_prepare_, ReadyCB);
+    ev_prepare_start(g_loop, &this->ct_ev_.ct_u_.ct_prepare_);
+}
+
+void
+AppThread::Run(void) {
+    // We run first; there should be nobody else
+    ASSERT(g_currentThread == NULL);
+    g_currentThread = this;
+
+    {
+        v8::Locker lock;
+        v8::Context::Scope ctx_scope(g_v8Ctx);
+        v8::HandleScope scope;
+
+        v8::Handle<v8::Value> val = ExecFile(path_.c_str());
+        ASSERT(!val.IsEmpty());
+    }
+
+    CoronaThread::Run();
+}
+
+void
+AppThread::ReadyCB(struct ev_loop *el, ev_prepare *evp, int revents) {
+    ASSERT(g_loop == el);
+    ASSERT(revents & EV_PREPARE);
+
+    CoronaThread *self = ((struct ct_ev*) evp)->ct_self_;
+    ev_prepare_stop(el, evp);
+
+    self->Start();
 }
 
 // atexit() handler; tears down all global state
@@ -282,8 +310,13 @@ main(int argc, char *argv[]) {
         }
     }
 
-    AppThread app_thread(argv[1]);
-    app_thread.Start();
+    // Initialize the event loop
+
+    g_loop = ev_default_loop(EVFLAG_AUTO);
+    AppThread app_thread(g_loop, argv[1]);
+
+    ev_loop(g_loop, 0);
+    ev_default_destroy();
 
     return 0;
 }
