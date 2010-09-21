@@ -16,11 +16,6 @@
 #include "corona.h"
 #include "v8-util.h"
 
-class CoronaThread;
-
-extern void InitSyscalls(v8::Handle<v8::Object> target);
-static v8::Local<v8::Value> ExecFile(const char *);
-
 char *g_execname = NULL;
 
 static v8::Persistent<v8::Context> g_v8Ctx;
@@ -29,6 +24,9 @@ static v8::Persistent<v8::Object> g_sysObj;
 static CoronaThread *g_currentThread = NULL;
 static std::list<CoronaThread*> g_runnableThreads;
 static std::list<CoronaThread*> g_blockedThreads;
+
+extern void InitSyscalls(v8::Handle<v8::Object> target);
+static v8::Local<v8::Value> ExecFile(const char *);
 
 class AppThread : public CoronaThread {
     public:
