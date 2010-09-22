@@ -10,7 +10,11 @@
 class CoronaThread : public v8::internal::Thread {
     public:
         CoronaThread(void);
-        virtual void Run(void) = 0;
+
+        /**
+         * Subclasses should implement Run2() rather than overriding this.
+         */
+        void Run(void);
 
         /**
          * Yield until we see some activity on the given fd.
@@ -46,12 +50,13 @@ class CoronaThread : public v8::internal::Thread {
         uint32_t ct_ev_type_;
 
         /**
-         * This thread is complete.
+         * Subclasses implement this for their logic.
          *
-         * A subclass's Run() implemetnation should invoke this rather than
-         * returning.
+         * This is separated from Run() so that the superclass can implement
+         * some V8 and scheduling logic before the threads execute and after
+         * they terminate.
          */
-        void Done(void);
+        virtual void Run2(void) = 0;
 
     private:
         void Yield(void);
@@ -66,7 +71,7 @@ class CallbackThread : public CoronaThread {
         CallbackThread(v8::Function *cb, uint8_t argc,
                        v8::Handle<v8::Value> argv[]);
         ~CallbackThread(void);
-        virtual void Run(void);
+        void Run2(void);
 
     private:
         v8::Persistent<v8::Function> cb_;

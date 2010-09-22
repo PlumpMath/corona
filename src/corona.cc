@@ -27,41 +27,40 @@ static std::list<CoronaThread*> g_runnableThreads;
 extern void InitSyscalls(v8::Handle<v8::Object> target);
 static v8::Local<v8::Value> ExecFile(const char *);
 
-/**
- * Thread for running the script provided on the commandline.
- *
- * This thread is special, as it has to negotiate the boot-up sequence in
- * the main() function and its strange interactions with the event loop.
- */
-class AppThread : public CoronaThread {
-    public:
-        AppThread(const std::string &str);
-        void Run(void);
-
-    private:
-        const std::string path_;
-};
-
 CoronaThread::CoronaThread(void) {
     this->ct_ev_.ct_self_ = this;
     this->ct_ev_type_ = 0;
 }
 
 void
-CoronaThread::Done(void) {
+CoronaThread::Run(void) {
+    ASSERT(v8::internal::current_thread == this);
+    ASSERT(g_current_thread == this);
+
+    {
+        v8::Locker lock;
+        v8::Context::Scope ctx_scope(g_v8Ctx);
+        v8::HandleScope scope;
+
+        this->Run2();
+    }
+
     if (g_runnableThreads.empty()) {
         g_current_thread = NULL;
         v8::internal::main_thread->Start();
         UNREACHABLE();
     }
 
+    // TODO: Delete this thread object; might have to be careful with the
+    //       stack.
+    //       Maybe queue these for deletion in the prepare loop?
+    // TODO: Run the next thread from the run queue
+
     UNIMPLEMENTED();
 }
 
 void
 CoronaThread::Schedule(void) {
-    // TODO: Assert that we're not in g_runnableThreads already. Somehow?
-    
     g_runnableThreads.push_back(this);
 }
 
@@ -138,47 +137,39 @@ CallbackThread::~CallbackThread(void) {
 }
 
 void
-CallbackThread::Run(void) {
-    ASSERT(v8::internal::current_thread == this);
-    ASSERT(g_current_thread == this);
-
-    {
-        v8::Locker lock;
-        v8::Context::Scope ctx_scope(g_v8Ctx);
-        v8::HandleScope scope;
-
-        cb_->Call(
-            g_v8Ctx->Global(),
-            this->argc_,
-            this->argv_
-        );
-    }
-
-    // XXX: Need to delete this thread, somehow. We're done, after all.
-
-    this->Done();
+CallbackThread::Run2(void) {
+    cb_->Call(
+        g_v8Ctx->Global(),
+        this->argc_,
+        this->argv_
+    );
 }
+
+/**
+ * Thread for running the script provided on the commandline.
+ *
+ * This thread is special, as it has to negotiate the boot-up sequence in
+ * the main() function and its strange interactions with the event loop.
+ */
+class AppThread : public CoronaThread {
+    public:
+        AppThread(const std::string &str);
+
+    protected:
+        void Run2(void);
+
+    private:
+        const std::string path_;
+};
 
 AppThread::AppThread(const std::string &str) : path_(str) {
 }
 
 void
-AppThread::Run(void) {
-    ASSERT(v8::internal::current_thread == this);
-    ASSERT(g_current_thread == this);
-
-    {
-        v8::Locker lock;
-        v8::Context::Scope ctx_scope(g_v8Ctx);
-        v8::HandleScope scope;
-
-        v8::Handle<v8::Value> val = ExecFile(path_.c_str());
-        ASSERT(!val.IsEmpty());
-    }
-
-    this->Done();
+AppThread::Run2(void) {
+    v8::Handle<v8::Value> val = ExecFile(path_.c_str());
+    ASSERT(!val.IsEmpty());
 }
-
 
 static void
 DispatchCB(struct ev_loop *el, struct ev_prepare *ep, int revents) {
