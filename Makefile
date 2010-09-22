@@ -4,6 +4,11 @@ V8_VERS = 2.4.1
 # All source files; used by ctags/cscope
 SRC_FILES = $(shell find . -name '*.[ch]' -or -name '*.cc')
 
+# Dependencies
+LIBEV_PATH = deps/build/lib/libev.a
+LIBCORO_PATH = deps/build/lib/libcoro.a
+LIBV8_PATH = deps/build/lib/libv8_g.a
+
 CFLAGS = -g -Wall -Werror 
 CFLAGS += -DCORO_SJLJ -DDEBUG
 CFLAGS += -Ideps/build/include
@@ -15,13 +20,13 @@ LDFLAGS += -lcoro -lev -lv8_g
 
 all: build/benchd build/bench build/corona
 
-build/benchd: build/obj/benchd.o deps/build/lib/libev.a deps/build/lib/libcoro.a
+build/benchd: build/obj/benchd.o $(LIBEV_PATH) $(LIBCORO_PATH)
 	$(CC) $(LDFLAGS) -o $@ $^
 
-build/bench: build/obj/bench.o deps/build/lib/libev.a
+build/bench: build/obj/bench.o $(LIBEV_PATH)
 	$(CC) $(LDFLAGS) -o $@ $^
 
-build/corona: build/obj/corona.o build/obj/syscalls.o deps/build/lib/libev.a deps/build/lib/libv8_g.a
+build/corona: build/obj/corona.o build/obj/syscalls.o $(LIBEV_PATH) $(LIBV8_PATH)
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 build/obj/%.o: tools/%.c
@@ -32,13 +37,13 @@ build/obj/%.o: src/%.cc
 	mkdir -p build/obj
 	$(CXX) $(CXXFLAGS) -o $@ -c $<
 
-deps/build/lib/libev.a: $(shell find deps/libev-$(LIBEV_VERS) -name '*.[ch]')
+$(LIBEV_PATH): $(shell find deps/libev-$(LIBEV_VERS) -name '*.[ch]')
 	mkdir -p deps/build/lib deps/build/include
 	cd deps/libev-$(LIBEV_VERS) && \
 		(test -f config.status || ./configure --disable-shared --prefix=$(shell pwd -P)/deps/build) && \
 		make install
 
-deps/build/lib/libv8_g.a: $(shell find deps/v8-$(V8_VERS) -name '*.[ch]' -or -name '*.cc')
+$(LIBV8_PATH): $(shell find deps/v8-$(V8_VERS) -name '*.[ch]' -or -name '*.cc')
 	mkdir -p deps/build/lib deps/build/include deps/build/include/v8
 	cd deps/v8-$(V8_VERS) && \
 		scons -j 4 visibility=default library=static mode=debug os=sigstack && \
@@ -46,7 +51,7 @@ deps/build/lib/libv8_g.a: $(shell find deps/v8-$(V8_VERS) -name '*.[ch]' -or -na
 		cp include/*.h $(shell pwd -P)/deps/build/include && \
 		cp src/*.h $(shell pwd -P)/deps/build/include/v8
 
-deps/build/lib/libcoro.a: $(shell find deps/libcoro -name '*.[ch]')
+$(LIBCORO_PATH): $(shell find deps/libcoro -name '*.[ch]')
 	mkdir -p deps/build/lib deps/build/include
 	cd deps/libcoro && \
 		make install INSTALLDIR=$(shell pwd -P)/deps/build
