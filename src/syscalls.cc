@@ -415,20 +415,14 @@ Accept(const v8::Arguments &args) {
 
     V8_ARG_VALUE_FD(fd, args, 0);
 
-    while (newfd < 0) {
+    while (true) {
         newfd = accept(fd, (struct sockaddr*) &addr_in, &addr_len);
-        if (newfd < 0) {
-            if (errno != EAGAIN) {
-                return v8::ThrowException(v8::Exception::Error(FormatString(
-                    "accept: %s", strerror(errno)
-                )));
-            }
-
-            g_currentThread->YieldIO(fd, EV_READ);
+        if (newfd >= 0 || errno != EAGAIN) {
+            return scope.Close(v8::Integer::New(newfd));
         }
-    }
 
-    return scope.Close(v8::Integer::New(newfd));
+        g_currentThread->YieldIO(fd, EV_READ);
+    }
 }
 
 // Set system call functions on the given target object
