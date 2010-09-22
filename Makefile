@@ -6,9 +6,8 @@ SRC_FILES = $(shell find . -name '*.[ch]' -or -name '*.cc')
 
 # Dependencies
 LIBEV_PATH = deps/build/lib/libev.a
-LIBCORO_PATH = deps/build/lib/libcoro.a
 LIBV8_PATH = deps/build/lib/libv8_g.a
-LIB_PATHS = $(LIBEV_PATH) $(LIBCORO_PATH) $(LIBV8_PATH)
+LIB_PATHS = $(LIBEV_PATH) $(LIBV8_PATH)
 
 # V8 settings to build using SCons
 LIBV8_SCONS_SETTINGS = visibility=default library=static mode=debug os=sigstack
@@ -18,24 +17,14 @@ CFLAGS += -DCORO_SJLJ -DDEBUG
 CFLAGS += -Ideps/build/include
 CXXFLAGS = $(CFLAGS) -fno-rtti -fno-exceptions
 LDFLAGS = -Ldeps/build/lib
-LDFLAGS += -lcoro -lev -lv8_g
+LDFLAGS += -lev -lv8_g
 
 .PHONY: all
 
-all: build/benchd build/bench build/corona
-
-build/benchd: build/obj/benchd.o
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/bench: build/obj/bench.o
-	$(CC) $(LDFLAGS) -o $@ $^
+all: build/corona
 
 build/corona: build/obj/corona.o build/obj/syscalls.o
 	$(CXX) $(LDFLAGS) -o $@ $^
-
-build/obj/%.o: tools/%.c $(LIB_PATHS)
-	mkdir -p build/obj
-	$(CC) $(CFLAGS) -o $@ -c $<
 
 build/obj/%.o: src/%.cc $(LIB_PATHS)
 	mkdir -p build/obj
@@ -54,11 +43,6 @@ $(LIBV8_PATH): $(shell find deps/v8-$(V8_VERS) -name '*.[ch]' -or -name '*.cc')
 		cp libv8_g.a $(shell pwd -P)/deps/build/lib && \
 		cp include/*.h $(shell pwd -P)/deps/build/include && \
 		cp src/*.h $(shell pwd -P)/deps/build/include/v8
-
-$(LIBCORO_PATH): $(shell find deps/libcoro -name '*.[ch]')
-	mkdir -p deps/build/lib deps/build/include
-	cd deps/libcoro && \
-		make install INSTALLDIR=$(shell pwd -P)/deps/build
 
 tags: $(SRC_FILES)
 	rm -f tags
@@ -79,4 +63,3 @@ clean:
 		[[ ! -f Makefile ]] || make clean distclean
 	cd deps/v8-$(V8_VERS) && \
 		scons -j 4 -c $(LIBV8_SCONS_SETTINGS) 
-	make -C deps/libcoro clean

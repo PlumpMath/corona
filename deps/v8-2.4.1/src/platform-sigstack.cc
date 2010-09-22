@@ -60,6 +60,7 @@
 #include "v8.h"
 
 #include "platform.h"
+#include "coro.h"
 
 #if 0
 #define PGLOG(x) \
@@ -390,15 +391,18 @@ class ThreadHandle::PlatformData : public Malloced {
     if (stack_) {
         free(stack_);
     }
+
+#ifndef CORO_SJLJ
+    coro_destroy(&coro_ctx_);
+#endif
   }
 
   void Initialize(ThreadHandle::Kind kind) {
     ThreadHandle::PlatformData *current_pd = NULL;
 
     id_ = -1;
-    memset(&jmp_, 0, sizeof(jmp_));
+    memset(&coro_ctx_, 0, sizeof(coro_ctx_));
     stack_ = NULL;
-    tramp_done_ = false;
     valid_ = false;
     memset(&locals_, 0, sizeof(locals_));
 
@@ -410,9 +414,8 @@ class ThreadHandle::PlatformData : public Malloced {
         ASSERT(current_pd->id_ >= 0);
 
         id_ = current_pd->id_;
-        memcpy(&jmp_, current_pd->jmp_, sizeof(jmp_));
+        memcpy(&coro_ctx_, &current_pd->coro_ctx_, sizeof(coro_ctx_));
         stack_ = current_pd->stack_;
-        tramp_done_ = current_pd->tramp_done_;
         valid_ = current_pd->valid_;
         memcpy(&locals_, &current_pd->locals_, sizeof(locals_));
         break;
@@ -436,9 +439,8 @@ class ThreadHandle::PlatformData : public Malloced {
   static const size_t kStackSize = SIGSTKSZ;
 
   int id_;
-  jmp_buf jmp_;
+  coro_context coro_ctx_;
   void *stack_;
-  bool tramp_done_;
   bool valid_;
   void *locals_[kMaxThreadLocals];
 
@@ -478,61 +480,29 @@ bool ThreadHandle::IsValid() const {
 
 
 static void
-Trampoline(int sig) {
-  ThreadHandle::PlatformData *pd = current_thread->thread_handle_data();
+Trampoline(void *arg) {
+  Thread *tp = (Thread*) arg;
+  ThreadHandle::PlatformData *pd = tp->thread_handle_data();
 
-  if (setjmp(pd->jmp_) == 0) {
-    ASSERT(!pd->tramp_done_);
-    ASSERT(!pd->valid_);
+  ASSERT(pd->valid_);
+  ASSERT(current_thread == tp);
 
-    pd->tramp_done_ = true;
-  } else {
-    ASSERT(pd->valid_);
+  tp->Run();
 
-    current_thread->Run();
-
-    // XXX: Returning from here will cause an attempt to traverse up the stack
-    //      to a non-existant stack frame at address 0x0. Add scheduler hook
-    //      in Run() implementation.
-    UNREACHABLE();
-  }
+  UNREACHABLE();
 }
 
 
 Thread::Thread() : ThreadHandle(ThreadHandle::INVALID) {
   ThreadHandle::PlatformData *pd = thread_handle_data();
-  Thread *prev_thread = prev_thread;
-  struct sigaction sa;
-  stack_t stk;
 
-  ASSERT(!pd->tramp_done_);
-
-  sa.sa_handler = Trampoline;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_ONSTACK;
-
-  if (sigaction(SIGUSR2, &sa, NULL)) {
-    perror("sigaction");
-    exit(1);
-  }
-
-  stk.ss_sp = pd->stack_;
-  stk.ss_size = ThreadHandle::PlatformData::kStackSize;
-  stk.ss_flags = 0;
-
-  if (sigaltstack(&stk, NULL)) {
-    perror("sigaltstack");
-    exit(1);
-  }
-
-  prev_thread = current_thread;
-  current_thread = this;
-
-  kill(getpid(), SIGUSR2);
-  while (!pd->tramp_done_)
-    ;
-
-  current_thread = prev_thread;
+  coro_create(
+    &pd->coro_ctx_,
+    Trampoline,
+    this,
+    pd->stack_,
+    ThreadHandle::PlatformData::kStackSize
+  );
 }
 
 
@@ -541,27 +511,19 @@ Thread::~Thread() {
 
 
 void Thread::Start() {
-#ifdef DEBUG
+  ThreadHandle::PlatformData *this_pd = thread_handle_data();
   Thread *prev_thread = current_thread;
-#endif
+  ThreadHandle::PlatformData *prev_pd = prev_thread->thread_handle_data();
 
-  ThreadHandle::PlatformData *current_pd = current_thread->thread_handle_data();
-  ThreadHandle::PlatformData *pd = thread_handle_data();
-
-  ASSERT(pd->tramp_done_);
   ASSERT(current_thread != this);
 
-  pd->valid_ = true;
+  this_pd->valid_ = true;
 
-  if (setjmp(current_pd->jmp_) == 0) {
-    current_thread = this;
-    longjmp(pd->jmp_, 1);
-  } else {
-    // When setjmp() returns, current_thread should be whatever
-    // thread invoked this function
-    ASSERT(current_thread != this);
-    ASSERT(current_thread == prev_thread);
-  }
+  current_thread = this;
+  coro_transfer(&prev_pd->coro_ctx_, &this_pd->coro_ctx_);
+
+  ASSERT(current_thread != this);
+  ASSERT(current_thread == prev_thread);
 }
 
 
@@ -573,7 +535,7 @@ void Thread::Join() {
 Thread::LocalStorageKey Thread::CreateThreadLocalKey() {
   int k = ThreadHandle::PlatformData::AllocateLocalId();
 
-  PGLOG(("CreateThreadLocalKey(%d) = %d\n", pd->id_, k));
+  PGLOG(("CreateThreadLocalKey() = %d\n", k));
 
   return static_cast<LocalStorageKey>(k);
 }
