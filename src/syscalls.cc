@@ -425,6 +425,22 @@ Accept(const v8::Arguments &args) {
     }
 }
 
+// close(2)
+//
+// <err> = close(<fd>)
+static v8::Handle<v8::Value>
+Close(const v8::Arguments &args) {
+    v8::HandleScope scope;
+
+    int fd = -1;
+    int err;
+
+    V8_ARG_VALUE_FD(fd, args, 0);
+
+    err = close(fd);
+    return scope.Close(v8::Integer::New(err));
+}
+
 // Set system call functions on the given target object
 void InitSyscalls(const v8::Handle<v8::Object> target) {
     InitErrno(target);
@@ -437,4 +453,5 @@ void InitSyscalls(const v8::Handle<v8::Object> target) {
     SET_FUNC(target, "listen", Listen);
     SET_FUNC(target, "fcntl", Fcntl);
     SET_FUNC(target, "accept", Accept);
+    SET_FUNC(target, "close", Close);
 }
