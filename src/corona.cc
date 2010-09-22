@@ -12,32 +12,34 @@
 #include <string>
 #include <list>
 #include <ev.h>
-#include <coro.h>
 #include "corona.h"
 #include "v8-util.h"
 
 char *g_execname = NULL;
-CoronaThread *g_currentThread = NULL;
+CoronaThread *g_current_thread = NULL;
 
 static struct ev_loop *g_loop = NULL;
 static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;
 
 static std::list<CoronaThread*> g_runnableThreads;
-static std::list<CoronaThread*> g_blockedThreads;
 
 extern void InitSyscalls(v8::Handle<v8::Object> target);
 static v8::Local<v8::Value> ExecFile(const char *);
 
+/**
+ * Thread for running the script provided on the commandline.
+ *
+ * This thread is special, as it has to negotiate the boot-up sequence in
+ * the main() function and its strange interactions with the event loop.
+ */
 class AppThread : public CoronaThread {
     public:
-        AppThread(struct ev_loop *el, const std::string &str);
+        AppThread(const std::string &str);
         void Run(void);
 
     private:
         const std::string path_;
-
-        static void ReadyCB(struct ev_loop *el, ev_prepare *evp, int revents);
 };
 
 CoronaThread::CoronaThread(void) {
@@ -46,13 +48,21 @@ CoronaThread::CoronaThread(void) {
 }
 
 void
-CoronaThread::Run(void) {
+CoronaThread::Done(void) {
     if (g_runnableThreads.empty()) {
+        g_current_thread = NULL;
         v8::internal::main_thread->Start();
         UNREACHABLE();
     }
 
     UNIMPLEMENTED();
+}
+
+void
+CoronaThread::Schedule(void) {
+    // TODO: Assert that we're not in g_runnableThreads already. Somehow?
+    
+    g_runnableThreads.push_back(this);
 }
 
 void
@@ -69,12 +79,15 @@ CoronaThread::YieldIO(int fd, int events) {
 
     this->Yield();
 
-    ASSERT(this->ct_ev_type_ == 0);
+    this->ct_ev_type_ = 0;
+    ev_io_stop(g_loop, &this->ct_ev_.ct_u_.ct_io_);
 }
 
 void
 CoronaThread::Yield(void) {
     ASSERT(this->ct_ev_type_ != 0);
+    ASSERT(g_current_thread == this);
+    ASSERT(v8::internal::current_thread == this);
 
     // If there are no more threads to run, run through our event loop
     // to collect some. We are guaranteed to have had *some* success here
@@ -88,10 +101,13 @@ CoronaThread::Yield(void) {
     CoronaThread *next = g_runnableThreads.front();
     g_runnableThreads.pop_front();
     if (next != this) {
-        next->Start();
-    }
+        v8::Unlocker unlock;
 
-    this->ct_ev_type_ = 0;
+        g_current_thread = next;
+        next->Start();
+        ASSERT(g_current_thread == this);
+        ASSERT(v8::internal::current_thread == this);
+    }
 }
 
 void
@@ -101,22 +117,55 @@ CoronaThread::ReadyCB(struct ev_loop *el, void *evp, int revents) {
     g_runnableThreads.push_back(self);
 }
 
-AppThread::AppThread(struct ev_loop *el, const std::string &str) : path_(str) {
-    ASSERT(el != NULL);
+CallbackThread::CallbackThread(v8::Function *cb, uint8_t argc,
+                               v8::Handle<v8::Value> argv[]) :
+    cb_(cb), argc_(argc) {
+    this->argv_ = new v8::Persistent<v8::Value>[argc];
 
-    // XXX: It'd be nice to set ct_ev_type__ here, but it's unclean
-    //      to reset it later on. Since we have our own dedicated
-    //      callback for the prepare, we know what type we are anyway.
-    
-    ev_prepare_init(&this->ct_ev_.ct_u_.ct_prepare_, AppThread::ReadyCB);
-    ev_prepare_start(g_loop, &this->ct_ev_.ct_u_.ct_prepare_);
+    for (uint8_t i = 0; i < argc; i++) {
+        this->argv_[i] = v8::Persistent<v8::Value>::New(argv[i]);
+    }
+}
+
+CallbackThread::~CallbackThread(void) {
+    this->cb_.Dispose();
+
+    for (uint8_t i = 0; i < this->argc_; i++) {
+        argv_[i].Dispose();
+    }
+
+    delete[] this->argv_;
+}
+
+void
+CallbackThread::Run(void) {
+    ASSERT(v8::internal::current_thread == this);
+    ASSERT(g_current_thread == this);
+
+    {
+        v8::Locker lock;
+        v8::Context::Scope ctx_scope(g_v8Ctx);
+        v8::HandleScope scope;
+
+        cb_->Call(
+            g_v8Ctx->Global(),
+            this->argc_,
+            this->argv_
+        );
+    }
+
+    // XXX: Need to delete this thread, somehow. We're done, after all.
+
+    this->Done();
+}
+
+AppThread::AppThread(const std::string &str) : path_(str) {
 }
 
 void
 AppThread::Run(void) {
-    // We run first; there should be nobody else
-    ASSERT(g_currentThread == NULL);
-    g_currentThread = this;
+    ASSERT(v8::internal::current_thread == this);
+    ASSERT(g_current_thread == this);
 
     {
         v8::Locker lock;
@@ -127,18 +176,20 @@ AppThread::Run(void) {
         ASSERT(!val.IsEmpty());
     }
 
-    CoronaThread::Run();
+    this->Done();
 }
 
-void
-AppThread::ReadyCB(struct ev_loop *el, ev_prepare *evp, int revents) {
-    ASSERT(g_loop == el);
-    ASSERT(revents & EV_PREPARE);
 
-    CoronaThread *self = ((struct ct_ev*) evp)->ct_self_;
-    ev_prepare_stop(el, evp);
+static void
+DispatchCB(struct ev_loop *el, struct ev_prepare *ep, int revents) {
+    if (g_runnableThreads.empty()) {
+        return;
+    }
 
-    self->Start();
+    g_current_thread = g_runnableThreads.front();
+    g_runnableThreads.pop_front();
+
+    g_current_thread->Start();
 }
 
 // atexit() handler; tears down all global state
@@ -321,6 +372,8 @@ GetBootLibPath(char *buf, size_t buf_len) {
 int
 main(int argc, char *argv[]) {
     char boot_path[MAXPATHLEN];
+    struct ev_prepare dispatch;
+    AppThread app_thread(argv[1]);
 
     // Our cleanup handler is smart enough to avoid attempting to clean up
     // things that have not yet been initialized
@@ -357,10 +410,16 @@ main(int argc, char *argv[]) {
         }
     }
 
-    // Initialize the event loop
+    // Initialize the event loop and add our first thread
+    
+    g_runnableThreads.push_front(&app_thread);
 
     g_loop = ev_default_loop(EVFLAG_AUTO);
-    AppThread app_thread(g_loop, argv[1]);
+
+    // XXX: Dispatch needs a better name
+    ev_prepare_init(&dispatch, DispatchCB);
+    ev_prepare_start(g_loop, &dispatch);
+    ev_unref(g_loop);
 
     ev_loop(g_loop, 0);
     ev_default_destroy();

@@ -403,7 +403,13 @@ Fcntl(const v8::Arguments &args) {
 
 // accept(2)
 //
-// <addr> = accept(<fd>)
+// <addr> = accept(<fd>, [<cb>])
+//
+// If a callback is provided, it will be invoked in a new coroutine whenever
+// a valid file descriptor is read from the socket. If no callback value is
+// provided, file descriptors are returned from the accept() call itself.
+// In either case, if the accept system call encounters a non-transient
+// error, the a negative value is returned.
 static v8::Handle<v8::Value>
 Accept(const v8::Arguments &args) {
     v8::HandleScope scope;
@@ -412,16 +418,35 @@ Accept(const v8::Arguments &args) {
     int newfd = -1;
     struct sockaddr_in addr_in;
     socklen_t addr_len = sizeof(addr_in);
+    v8::Local<v8::Function> cb;
 
     V8_ARG_VALUE_FD(fd, args, 0);
+
+    if (args.Length() > 1) {
+        if (!args[1]->IsFunction()) {
+            return v8::ThrowException(v8::Exception::TypeError(
+                v8::String::New("Argument at index 1 should be a function")
+            ));
+        }
+
+        cb = v8::Local<v8::Function>::Cast(args[1]);
+    }
 
     while (true) {
         newfd = accept(fd, (struct sockaddr*) &addr_in, &addr_len);
         if (newfd >= 0 || errno != EAGAIN) {
-            return scope.Close(v8::Integer::New(newfd));
+            if (cb.IsEmpty() || newfd < 0) {
+                return scope.Close(v8::Integer::New(newfd));
+            }
+
+            v8::Handle<v8::Value> argv[] = {
+                v8::Integer::New(newfd)
+            };
+            CallbackThread *cb_thread = new CallbackThread(*cb, 1, argv);
+            cb_thread->Schedule();
         }
 
-        g_currentThread->YieldIO(fd, EV_READ);
+        g_current_thread->YieldIO(fd, EV_READ);
     }
 }
 
