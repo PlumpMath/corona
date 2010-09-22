@@ -18,13 +18,6 @@
         (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete) \
     )
 
-// The list of PROTO_* names that we want to fill in using getprotoent(3)
-static const char *proto_names[] = {
-    "TCP",
-    "UDP",
-    NULL
-};
-
 // Accessor for 'errno' property
 static v8::Handle<v8::Value>
 GetErrno(v8::Local<v8::String> name, const v8::AccessorInfo &info) {
@@ -215,6 +208,7 @@ InitFcntl(const v8::Handle<v8::Object> target) {
 // Set networking-related constants in the target namespace
 static void
 InitNet(const v8::Handle<v8::Object> target) {
+    static const char *proto_names[] = { "TCP", "UDP", NULL };
     char buf[512];
     int i;
 
