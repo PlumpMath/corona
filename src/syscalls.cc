@@ -10,14 +10,6 @@
 #include <string.h>
 #include "corona.h"
 
-// Set a constant numerical value on the given target
-#define SET_CONST(target, e) \
-    (target)->Set( \
-        v8::String::NewSymbol(#e), \
-        v8::Integer::New(e), \
-        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete) \
-    )
-
 // Accessor for 'errno' property
 static v8::Handle<v8::Value>
 GetErrno(v8::Local<v8::String> name, const v8::AccessorInfo &info) {
@@ -445,34 +437,10 @@ void InitSyscalls(const v8::Handle<v8::Object> target) {
     InitFcntl(target);
     InitNet(target);
 
-    target->Set(
-        v8::String::NewSymbol("write"),
-        v8::FunctionTemplate::New(Write)->GetFunction(),
-        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
-    );
-    target->Set(
-        v8::String::NewSymbol("socket"),
-        v8::FunctionTemplate::New(Socket)->GetFunction(),
-        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
-    );
-    target->Set(
-        v8::String::NewSymbol("bind"),
-        v8::FunctionTemplate::New(Bind)->GetFunction(),
-        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
-    );
-    target->Set(
-        v8::String::NewSymbol("listen"),
-        v8::FunctionTemplate::New(Listen)->GetFunction(),
-        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
-    );
-    target->Set(
-        v8::String::NewSymbol("fcntl"),
-        v8::FunctionTemplate::New(Fcntl)->GetFunction(),
-        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
-    );
-    target->Set(
-        v8::String::NewSymbol("accept"),
-        v8::FunctionTemplate::New(Accept)->GetFunction(),
-        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
-    );
+    SET_FUNC(target, "write", Write);
+    SET_FUNC(target, "socket", Socket);
+    SET_FUNC(target, "bind", Bind);
+    SET_FUNC(target, "listen", Listen);
+    SET_FUNC(target, "fcntl", Fcntl);
+    SET_FUNC(target, "accept", Accept);
 }

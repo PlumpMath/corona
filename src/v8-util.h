@@ -75,7 +75,24 @@ namespace v8 {
         (lval) = v8::Local<v8::Function>::Cast((args)[(index)]); \
     } while (0)
 
+
 // Misc helper functions for other V8 interactions
+
+// Set a constant numerical property on the given target
+#define SET_CONST(target, e) \
+    (target)->Set( \
+        v8::String::NewSymbol(#e), \
+        v8::Integer::New(e), \
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete) \
+    )
+
+// Set a constant function property on the given target
+#define SET_FUNC(target, name, func) \
+    (target)->Set( \
+        v8::String::NewSymbol(name), \
+        v8::FunctionTemplate::New(func)->GetFunction(), \
+        (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete) \
+    )
 
 // Create a namespace object of the given name inside a target
 static inline v8::Handle<v8::Object>
