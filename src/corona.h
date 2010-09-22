@@ -9,6 +9,8 @@ class CoronaThread : public v8::internal::Thread {
         CoronaThread(void);
         virtual void Run(void);
 
+        void YieldIO(int fd, int events);
+
     protected:
         // Our libev structure
         struct ct_ev {
@@ -23,8 +25,13 @@ class CoronaThread : public v8::internal::Thread {
         // The libev structure currently in use. Valid values are like such
         // as the EV_PREPARE, EV_IO and everything like such as.
         uint32_t ct_ev_type_;
+
+    private:
+        void Yield(void);
+        static void ReadyCB(struct ev_loop *el, void *evp, int revents);
 };
 
 extern char *g_execname;
+extern CoronaThread *g_currentThread;
 
 #endif /* __corona_corona_h__ */

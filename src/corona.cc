@@ -17,12 +17,12 @@
 #include "v8-util.h"
 
 char *g_execname = NULL;
-struct ev_loop *g_loop = NULL;
+CoronaThread *g_currentThread = NULL;
 
+static struct ev_loop *g_loop = NULL;
 static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;
 
-static CoronaThread *g_currentThread = NULL;
 static std::list<CoronaThread*> g_runnableThreads;
 static std::list<CoronaThread*> g_blockedThreads;
 
@@ -55,13 +55,60 @@ CoronaThread::Run(void) {
     UNIMPLEMENTED();
 }
 
-AppThread::AppThread(struct ev_loop *el, const std::string &str) : path_(str) {
-    ASSERT(el != NULL);
-    ASSERT(this->ct_ev_.ct_self_ == this);
+void
+CoronaThread::YieldIO(int fd, int events) {
     ASSERT(this->ct_ev_type_ == 0);
 
-    this->ct_ev_type_ = EV_PREPARE;
-    ev_prepare_init(&this->ct_ev_.ct_u_.ct_prepare_, ReadyCB);
+    this->ct_ev_type_ = EV_IO;
+    ev_io_init(
+        &this->ct_ev_.ct_u_.ct_io_,
+        (void (*)(struct ev_loop *, ev_io *, int)) CoronaThread::ReadyCB,
+        fd,
+        events);
+    ev_io_start(g_loop, &this->ct_ev_.ct_u_.ct_io_);
+
+    this->Yield();
+
+    ASSERT(this->ct_ev_type_ == 0);
+}
+
+void
+CoronaThread::Yield(void) {
+    ASSERT(this->ct_ev_type_ != 0);
+
+    // If there are no more threads to run, run through our event loop
+    // to collect some. We are guaranteed to have had *some* success here
+    // because we block if none are available, and we know(!) that at least
+    // one thread exists, us.
+    if (g_runnableThreads.empty()) {
+        ev_loop(g_loop, EVLOOP_ONESHOT);
+        ASSERT(!g_runnableThreads.empty());
+    }
+
+    CoronaThread *next = g_runnableThreads.front();
+    g_runnableThreads.pop_front();
+    if (next != this) {
+        next->Start();
+    }
+
+    this->ct_ev_type_ = 0;
+}
+
+void
+CoronaThread::ReadyCB(struct ev_loop *el, void *evp, int revents) {
+    CoronaThread *self = ((struct ct_ev*) evp)->ct_self_;
+
+    g_runnableThreads.push_back(self);
+}
+
+AppThread::AppThread(struct ev_loop *el, const std::string &str) : path_(str) {
+    ASSERT(el != NULL);
+
+    // XXX: It'd be nice to set ct_ev_type__ here, but it's unclean
+    //      to reset it later on. Since we have our own dedicated
+    //      callback for the prepare, we know what type we are anyway.
+    
+    ev_prepare_init(&this->ct_ev_.ct_u_.ct_prepare_, AppThread::ReadyCB);
     ev_prepare_start(g_loop, &this->ct_ev_.ct_u_.ct_prepare_);
 }
 
