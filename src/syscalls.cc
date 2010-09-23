@@ -17,7 +17,7 @@ ToUpper(const char *str) {
     static char buf[128];
 
     int i = 0;
-    while (*str) {
+    while (*str && i < (sizeof(buf) - 1)) {
         buf[i++] = (isascii(*str)) ? toupper(*(str++)) : *(str++);
     }
     buf[i] = '\0';
