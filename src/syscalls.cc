@@ -8,7 +8,22 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <string.h>
+#include <ctype.h>
 #include "corona.h"
+
+// Upper-case a string
+static char *
+ToUpper(const char *str) {
+    static char buf[128];
+
+    int i = 0;
+    while (*str) {
+        buf[i++] = (isascii(*str)) ? toupper(*(str++)) : *(str++);
+    }
+    buf[i] = '\0';
+
+    return buf;
+}
 
 // Accessor for 'errno' property
 static v8::Handle<v8::Value>
@@ -200,9 +215,8 @@ InitFcntl(const v8::Handle<v8::Object> target) {
 // Set networking-related constants in the target namespace
 static void
 InitNet(const v8::Handle<v8::Object> target) {
-    static const char *proto_names[] = { "TCP", "UDP", NULL };
-    char buf[512];
-    int i;
+    struct protoent *pent;
+    char buf[128];
 
     // AF_*
     SET_CONST(target, AF_UNIX);
@@ -213,26 +227,28 @@ InitNet(const v8::Handle<v8::Object> target) {
     SET_CONST(target, SOCK_DGRAM);
 
     // PROTO_*
-    for (i = 0; proto_names[i]; i++) {
-        struct protoent *pent;
-        
-        if (!(pent = getprotobyname(proto_names[i]))) {
-            fprintf(
-                stderr,
-                "%s: warning: could not resolve protocol %s\n",
-                    g_execname, proto_names[i]
-            );
-            continue;
-        }
-
-        sprintf(buf, "PROTO_%s", proto_names[i]);
-
+    for (pent = getprotoent(); pent != NULL; pent = getprotoent()) {
+        sprintf(buf, "PROTO_%s", ToUpper(pent->p_name));
         target->Set(
             v8::String::NewSymbol(buf),
             v8::Integer::New(pent->p_proto),
             (v8::PropertyAttribute) (v8::ReadOnly | v8::DontDelete)
         );
     }
+    endprotoent();
+
+    // SO_*
+    SET_CONST(target, SO_DEBUG);
+    SET_CONST(target, SO_REUSEADDR);
+    SET_CONST(target, SO_REUSEPORT);
+    SET_CONST(target, SO_KEEPALIVE);
+    SET_CONST(target, SO_BROADCAST);
+    SET_CONST(target, SO_SNDBUF);
+    SET_CONST(target, SO_RCVBUF);
+    SET_CONST(target, SO_NOSIGPIPE);
+
+    // SOL_*
+    SET_CONST(target, SOL_SOCKET);
 }
 
 // write(2)
@@ -466,6 +482,30 @@ Close(const v8::Arguments &args) {
     return scope.Close(v8::Integer::New(err));
 }
 
+// setsockopt(2)
+//
+// <err> = setsockopt(<fd>, <level>, <option>, <val>)
+//
+// The <value> parameter must be numerical.
+static v8::Handle<v8::Value>
+Setsockopt(const v8::Arguments &args) {
+    v8::HandleScope scope;
+
+    int fd = -1;
+    int lev = -1;
+    int opt = -1;
+    int val = -1;
+    int err;
+
+    V8_ARG_VALUE_FD(fd, args, 0);
+    V8_ARG_VALUE(lev, args, 1, Int32);
+    V8_ARG_VALUE(opt, args, 2, Int32);
+    V8_ARG_VALUE(val, args, 3, Int32);
+
+    err = setsockopt(fd, lev, opt, &val, sizeof(val));
+    return scope.Close(v8::Integer::New(err));
+}
+
 // Set system call functions on the given target object
 void InitSyscalls(const v8::Handle<v8::Object> target) {
     InitErrno(target);
@@ -479,4 +519,5 @@ void InitSyscalls(const v8::Handle<v8::Object> target) {
     SET_FUNC(target, "fcntl", Fcntl);
     SET_FUNC(target, "accept", Accept);
     SET_FUNC(target, "close", Close);
+    SET_FUNC(target, "setsockopt", Setsockopt);
 }
