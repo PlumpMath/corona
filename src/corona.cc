@@ -13,6 +13,7 @@
 #include <list>
 #include <ev.h>
 #include "corona.h"
+#include "syscalls.h"
 #include "sched.h"
 #include "v8-util.h"
 
@@ -21,9 +22,6 @@ struct ev_loop *g_loop = NULL;
 v8::Persistent<v8::Context> g_v8Ctx;
 
 static v8::Persistent<v8::Object> g_sysObj;
-
-extern void InitSyscalls(v8::Handle<v8::Object> target);
-static v8::Local<v8::Value> ExecFile(const char *);
 
 /**
  * Thread for running the script provided on the commandline.
@@ -41,15 +39,6 @@ class AppThread : public CoronaThread {
     private:
         const std::string path_;
 };
-
-AppThread::AppThread(const std::string &str) : path_(str) {
-}
-
-void
-AppThread::Run2(void) {
-    v8::Handle<v8::Value> val = ExecFile(path_.c_str());
-    ASSERT(!val.IsEmpty());
-}
 
 static void
 DispatchCB(struct ev_loop *el, struct ev_prepare *ep, int revents) {
@@ -234,6 +223,14 @@ GetBootLibPath(char *buf, size_t buf_len) {
     return buf;
 }
 
+AppThread::AppThread(const std::string &str) : path_(str) {
+}
+
+void
+AppThread::Run2(void) {
+    v8::Handle<v8::Value> val = ExecFile(path_.c_str());
+    ASSERT(!val.IsEmpty());
+}
 
 // TODO: Parse arguments using FlagList::SetFlagsFromCommandLine(); use '--' to
 //       delimit V8 options from corona options
