@@ -41,7 +41,7 @@ class AppThread : public CoronaThread {
 };
 
 static void
-DispatchCB(struct ev_loop *el, struct ev_prepare *ep, int revents) {
+CheckCB(struct ev_loop *el, struct ev_check *ep, int revents) {
     ASSERT(g_current_thread == NULL);
 
     if ((g_current_thread = PopRunnableThread())) {
@@ -237,7 +237,7 @@ AppThread::Run2(void) {
 int
 main(int argc, char *argv[]) {
     char boot_path[MAXPATHLEN];
-    struct ev_prepare dispatch;
+    struct ev_check check;
     AppThread app_thread(argv[1]);
 
     // Our cleanup handler is smart enough to avoid attempting to clean up
@@ -279,9 +279,8 @@ main(int argc, char *argv[]) {
    
     g_loop = ev_default_loop(EVFLAG_AUTO);
 
-    // XXX: Dispatch needs a better name
-    ev_prepare_init(&dispatch, DispatchCB);
-    ev_prepare_start(g_loop, &dispatch);
+    ev_check_init(&check, CheckCB);
+    ev_check_start(g_loop, &check);
     ev_unref(g_loop);
 
     ScheduleRunnableThread(&app_thread);
