@@ -27,7 +27,7 @@ build/corona: build/obj/corona.o build/obj/syscalls.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 build/obj/%.o: src/%.cc $(LIB_PATHS)
-	mkdir -p build/obj
+	@mkdir -p build/obj
 	$(CXX) $(CXXFLAGS) -o $@ -c $<
 
 $(LIBEV_PATH): $(shell find deps/libev-$(LIBEV_VERS) -name '*.[ch]')
