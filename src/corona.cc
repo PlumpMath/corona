@@ -23,9 +23,37 @@ static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;
 
 static std::list<CoronaThread*> g_runnableThreads;
+static std::list<CoronaThread*> g_zombieThreads;
 
 extern void InitSyscalls(v8::Handle<v8::Object> target);
 static v8::Local<v8::Value> ExecFile(const char *);
+
+/**
+ * Pop the next runnable thread to run off of the runq.
+ *
+ * This method is destructive. As a side-effect, it also walks the list of
+ * zombie threads and deletes them.
+ */
+static CoronaThread *
+PopRunnableThread(void) {
+    CoronaThread *next;
+
+    if (g_runnableThreads.empty()) {
+        next = NULL;
+    } else {
+        next = g_runnableThreads.front();
+        g_runnableThreads.pop_front();
+    }
+
+    while (!g_zombieThreads.empty()) {
+        CoronaThread *zt = g_zombieThreads.front();
+        g_zombieThreads.pop_front();
+
+        delete zt;
+    }
+
+    return next;
+}
 
 CoronaThread::CoronaThread(void) {
     this->ct_ev_.ct_self_ = this;
@@ -44,19 +72,22 @@ CoronaThread::Run(void) {
 
         this->Run2();
     }
+    
+    // If we get here, it means that the applicatoin code represented by
+    // this control flow has returned; we're done. Find someone else to run
+    // and clean up after ourselves.
 
-    if (g_runnableThreads.empty()) {
-        g_current_thread = NULL;
+    g_current_thread = PopRunnableThread();
+    g_zombieThreads.push_back(this);
+
+    if (g_current_thread) {
+        g_current_thread->Start();
+    } else {
+        ASSERT(g_runnableThreads.empty());
         v8::internal::main_thread->Start();
-        UNREACHABLE();
     }
 
-    // TODO: Delete this thread object; might have to be careful with the
-    //       stack.
-    //       Maybe queue these for deletion in the prepare loop?
-    // TODO: Run the next thread from the run queue
-
-    UNIMPLEMENTED();
+    UNREACHABLE();
 }
 
 void
