@@ -13,168 +13,17 @@
 #include <list>
 #include <ev.h>
 #include "corona.h"
+#include "sched.h"
 #include "v8-util.h"
 
 char *g_execname = NULL;
-CoronaThread *g_current_thread = NULL;
+struct ev_loop *g_loop = NULL;
+v8::Persistent<v8::Context> g_v8Ctx;
 
-static struct ev_loop *g_loop = NULL;
-static v8::Persistent<v8::Context> g_v8Ctx;
 static v8::Persistent<v8::Object> g_sysObj;
-
-static std::list<CoronaThread*> g_runnableThreads;
-static std::list<CoronaThread*> g_zombieThreads;
 
 extern void InitSyscalls(v8::Handle<v8::Object> target);
 static v8::Local<v8::Value> ExecFile(const char *);
-
-/**
- * Pop the next runnable thread to run off of the runq.
- *
- * This method is destructive. As a side-effect, it also walks the list of
- * zombie threads and deletes them.
- */
-static CoronaThread *
-PopRunnableThread(void) {
-    CoronaThread *next;
-
-    if (g_runnableThreads.empty()) {
-        next = NULL;
-    } else {
-        next = g_runnableThreads.front();
-        g_runnableThreads.pop_front();
-    }
-
-    while (!g_zombieThreads.empty()) {
-        CoronaThread *zt = g_zombieThreads.front();
-        g_zombieThreads.pop_front();
-
-        delete zt;
-    }
-
-    return next;
-}
-
-CoronaThread::CoronaThread(void) {
-    this->ct_ev_.ct_self_ = this;
-    this->ct_ev_type_ = 0;
-}
-
-void
-CoronaThread::Run(void) {
-    ASSERT(v8::internal::current_thread == this);
-    ASSERT(g_current_thread == this);
-
-    {
-        v8::Locker lock;
-        v8::Context::Scope ctx_scope(g_v8Ctx);
-        v8::HandleScope scope;
-
-        this->Run2();
-    }
-    
-    // If we get here, it means that the applicatoin code represented by
-    // this control flow has returned; we're done. Find someone else to run
-    // and clean up after ourselves.
-
-    g_current_thread = PopRunnableThread();
-    g_zombieThreads.push_back(this);
-
-    if (g_current_thread) {
-        g_current_thread->Start();
-    } else {
-        ASSERT(g_runnableThreads.empty());
-        v8::internal::main_thread->Start();
-    }
-
-    UNREACHABLE();
-}
-
-void
-CoronaThread::Schedule(void) {
-    g_runnableThreads.push_back(this);
-}
-
-void
-CoronaThread::YieldIO(int fd, int events) {
-    ASSERT(this->ct_ev_type_ == 0);
-
-    this->ct_ev_type_ = EV_IO;
-    ev_io_init(
-        &this->ct_ev_.ct_u_.ct_io_,
-        (void (*)(struct ev_loop *, ev_io *, int)) CoronaThread::ReadyCB,
-        fd,
-        events);
-    ev_io_start(g_loop, &this->ct_ev_.ct_u_.ct_io_);
-
-    this->Yield();
-
-    this->ct_ev_type_ = 0;
-    ev_io_stop(g_loop, &this->ct_ev_.ct_u_.ct_io_);
-}
-
-void
-CoronaThread::Yield(void) {
-    ASSERT(this->ct_ev_type_ != 0);
-    ASSERT(g_current_thread == this);
-    ASSERT(v8::internal::current_thread == this);
-
-    // If there are no more threads to run, run through our event loop
-    // to collect some. We are guaranteed to have had *some* success here
-    // because we block if none are available, and we know(!) that at least
-    // one thread exists, us.
-    if (g_runnableThreads.empty()) {
-        ev_loop(g_loop, EVLOOP_ONESHOT);
-        ASSERT(!g_runnableThreads.empty());
-    }
-
-    CoronaThread *next = g_runnableThreads.front();
-    g_runnableThreads.pop_front();
-    if (next != this) {
-        v8::Unlocker unlock;
-
-        g_current_thread = next;
-        next->Start();
-        ASSERT(g_current_thread == this);
-        ASSERT(v8::internal::current_thread == this);
-    }
-}
-
-void
-CoronaThread::ReadyCB(struct ev_loop *el, void *evp, int revents) {
-    CoronaThread *self = ((struct ct_ev*) evp)->ct_self_;
-
-    g_runnableThreads.push_back(self);
-}
-
-CallbackThread::CallbackThread(v8::Function *cb, uint8_t argc,
-                               v8::Handle<v8::Value> argv[]) :
-    cb_(cb), argc_(argc) {
-    this->argv_ = new v8::Persistent<v8::Value>[argc];
-
-    for (uint8_t i = 0; i < argc; i++) {
-        this->argv_[i] = v8::Persistent<v8::Value>::New(argv[i]);
-    }
-}
-
-CallbackThread::~CallbackThread(void) {
-    this->cb_.Dispose();
-
-    for (uint8_t i = 0; i < this->argc_; i++) {
-        argv_[i].Dispose();
-    }
-
-    delete[] this->argv_;
-}
-
-void
-CallbackThread::Run2(void) {
-    cb_->Call(
-        g_v8Ctx->Global(),
-        this->argc_,
-        this->argv_
-    );
-}
 
 /**
  * Thread for running the script provided on the commandline.
@@ -204,14 +53,11 @@ AppThread::Run2(void) {
 
 static void
 DispatchCB(struct ev_loop *el, struct ev_prepare *ep, int revents) {
-    if (g_runnableThreads.empty()) {
-        return;
+    ASSERT(g_current_thread == NULL);
+
+    if ((g_current_thread = PopRunnableThread())) {
+        g_current_thread->Start();
     }
-
-    g_current_thread = g_runnableThreads.front();
-    g_runnableThreads.pop_front();
-
-    g_current_thread->Start();
 }
 
 // atexit() handler; tears down all global state
@@ -433,15 +279,15 @@ main(int argc, char *argv[]) {
     }
 
     // Initialize the event loop and add our first thread
-    
-    g_runnableThreads.push_front(&app_thread);
-
+   
     g_loop = ev_default_loop(EVFLAG_AUTO);
 
     // XXX: Dispatch needs a better name
     ev_prepare_init(&dispatch, DispatchCB);
     ev_prepare_start(g_loop, &dispatch);
     ev_unref(g_loop);
+
+    ScheduleRunnableThread(&app_thread);
 
     ev_loop(g_loop, 0);
     ev_default_destroy();

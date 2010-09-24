@@ -23,7 +23,7 @@ LDFLAGS += -lev -lv8_g
 
 all: build/corona
 
-build/corona: build/obj/corona.o build/obj/syscalls.o
+build/corona: build/obj/corona.o build/obj/syscalls.o build/obj/sched.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 build/obj/%.o: src/%.cc $(LIB_PATHS)

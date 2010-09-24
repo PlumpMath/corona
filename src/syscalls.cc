@@ -10,6 +10,8 @@
 #include <string.h>
 #include <ctype.h>
 #include "corona.h"
+#include "sched.h"
+#include "v8-util.h"
 
 // Upper-case a string
 static char *
