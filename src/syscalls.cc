@@ -14,10 +14,11 @@
 // Upper-case a string
 static char *
 ToUpper(const char *str) {
-    static char buf[128];
+    static const size_t kBufSz = 128;
+    static char buf[kBufSz];
 
-    int i = 0;
-    while (*str && i < (sizeof(buf) - 1)) {
+    size_t i = 0;
+    while (*str && i < kBufSz - 1) {
         buf[i++] = (isascii(*str)) ? toupper(*(str++)) : *(str++);
     }
     buf[i] = '\0';
