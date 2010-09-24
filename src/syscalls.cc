@@ -313,7 +313,6 @@ Bind(const v8::Arguments &args) {
     V8_ARG_EXISTS(args, 1);
     if (args[1]->IsNumber()) {
         int port = -1;
-        char *addr_str = NULL;
 
         port = args[1]->Int32Value();
         if (port < 0) {
@@ -322,7 +321,14 @@ Bind(const v8::Arguments &args) {
             )));
         }
 
+        bzero(&addr_in, sizeof(addr_in));
+        addr_in.sin_len = sizeof(addr_in);
+        addr_in.sin_family = AF_INET;
+        addr_in.sin_port = htons(port);
+
         if (args.Length() >= 3) {
+            char *addr_str = NULL;
+
             if (!args[2]->IsString()) {
                 return v8::ThrowException(v8::Exception::TypeError(
                     v8::String::New(
@@ -332,16 +338,13 @@ Bind(const v8::Arguments &args) {
             }
 
             V8_ARG_VALUE_UTF8(addr_str, args, 2);
-        }
-
-        bzero(&addr_in, sizeof(addr_in));
-        addr_in.sin_len = sizeof(addr_in);
-        addr_in.sin_family = AF_INET;
-        addr_in.sin_port = htons(port);
-        if (!inet_aton(addr_str, &addr_in.sin_addr)) {
-            return v8::ThrowException(v8::Exception::TypeError(FormatString(
-                "Invalid address argument specified: %s", addr_str
-            )));
+            if (!inet_aton(addr_str, &addr_in.sin_addr)) {
+                return v8::ThrowException(v8::Exception::TypeError(FormatString(
+                    "Invalid address argument specified: %s", addr_str
+                )));
+            }
+        } else {
+            addr_in.sin_addr.s_addr = INADDR_ANY;
         }
 
         addr = (struct sockaddr*) &addr_in;
