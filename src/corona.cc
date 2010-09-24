@@ -44,6 +44,11 @@ static void
 CheckCB(struct ev_loop *el, struct ev_check *ep, int revents) {
     ASSERT(g_current_thread == NULL);
 
+    // Perform garbage collection
+    while (v8::V8::IdleNotification()) {
+        ;
+    }
+
     if ((g_current_thread = PopRunnableThread())) {
         g_current_thread->Start();
     }
