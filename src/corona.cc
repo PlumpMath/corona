@@ -44,9 +44,18 @@ static void
 CheckCB(struct ev_loop *el, struct ev_check *ep, int revents) {
     ASSERT(g_current_thread == NULL);
 
+    static ev_tstamp last_gc = 0;
+    static const ev_tstamp kGCInterval = 5.0f;
+
     // Perform garbage collection
-    while (v8::V8::IdleNotification()) {
-        ;
+    //
+    // XXX: This heuristic is just a guess.
+    if (last_gc + kGCInterval < ev_now(el)) {
+        while (v8::V8::IdleNotification()) {
+            ;
+        }
+
+        last_gc = ev_now(el);
     }
 
     if ((g_current_thread = PopRunnableThread())) {
