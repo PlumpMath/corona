@@ -13,7 +13,7 @@ LIB_PATHS = $(LIBEV_PATH) $(LIBV8_PATH)
 LIBV8_SCONS_SETTINGS = visibility=default library=static mode=debug os=sigstack
 
 CFLAGS = -g -Wall -Werror 
-CFLAGS += -DCORO_SJLJ -DDEBUG
+CFLAGS += -DCORO_SJLJ -DDEBUG -D_DARWIN_UNLIMITED_SELECT
 CFLAGS += -Ideps/build/include
 CXXFLAGS = $(CFLAGS) -fno-rtti -fno-exceptions
 LDFLAGS = -Ldeps/build/lib
@@ -21,19 +21,27 @@ LDFLAGS += -lev -lv8_g
 
 .PHONY: all
 
-all: build/corona
+all: build/corona build/tcp
 
 build/corona: build/obj/corona.o build/obj/syscalls.o build/obj/sched.o
 	$(CXX) $(LDFLAGS) -o $@ $^
+
+build/tcp: build/obj/tcp.o
+	$(CC) $(LDFLAGS) -o $@ $^
 
 build/obj/%.o: src/%.cc $(LIB_PATHS)
 	@mkdir -p build/obj
 	$(CXX) $(CXXFLAGS) -o $@ -c $<
 
+build/obj/%.o: bench/%.c $(LIB_PATHS)
+	@mkdir -p build/obj
+	$(CC) $(CFLAGS) -o $@ -c $<
+
 $(LIBEV_PATH): $(shell find deps/libev-$(LIBEV_VERS) -name '*.[ch]')
 	mkdir -p deps/build/lib deps/build/include
 	cd deps/libev-$(LIBEV_VERS) && \
-		(test -f config.status || ./configure --disable-shared --prefix=$(shell pwd -P)/deps/build) && \
+		(test -f config.status || \
+			CFLAGS=-D_DARWIN_UNLIMITED_SELECT ./configure --disable-shared --prefix=$(shell pwd -P)/deps/build) && \
 		make install
 
 $(LIBV8_PATH): $(shell find deps/v8-$(V8_VERS) -name '*.[ch]' -or -name '*.cc')
