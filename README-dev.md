@@ -6,6 +6,11 @@ to change the ephemeral port range to something larger than the 16k default
     % sudo sysctl -w net.inet.ip.portrange.first=1024
     % sudo sysctl -w net.inet.ip.portrange.hifirst=1024
 
+You'll also want t up the limit on the number of file descriptors per
+process. Say, to 8k.
+
+    % ulimit -n 8192
+
 ### Updating V8
 
 Grab V8 snapshots by doing something like
